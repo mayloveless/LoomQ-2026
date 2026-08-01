@@ -7,13 +7,27 @@ the functions directly or delegate to another language/runtime with subprocess.
 
 from typing import Any, Dict, List, Tuple
 
+from loomq.parser import parse_qasm
+from loomq.serializers import serialize_braket, serialize_spinq
+
 
 SUPPORTED_TARGETS = ("spinq", "originq", "braket")
 
 
 def transpile(qasm_str: str, target: str) -> str:
     """Translate OpenQASM 2.0 into the target backend's native representation."""
-    raise NotImplementedError("Implement transpile(qasm_str, target)")
+    serializers = {
+        "spinq": serialize_spinq,
+        "braket": serialize_braket,
+    }
+    try:
+        serializer = serializers[target]
+    except KeyError as exc:
+        raise ValueError(
+            "unsupported transpile target %r; expected one of: %s"
+            % (target, ", ".join(sorted(serializers)))
+        ) from exc
+    return serializer(parse_qasm(qasm_str))
 
 
 def run(qasm_str: str, target: str, shots: int) -> Dict[str, Any]:

@@ -1,0 +1,33 @@
+{
+  "contract_version": "1.0",
+  "suite": "public",
+  "generated_at": "2026-08-01T13:15:31.960189+00:00",
+  "summary": {
+    "passed": 0,
+    "failed": 4,
+    "total": 4
+  },
+  "cases": [
+    {
+      "case_id": "l1:bell.qasm:spinq",
+      "status": "FAIL",
+      "reason": "NotImplementedError: Implement run(qasm_str, target, shots)"
+    },
+    {
+      "case_id": "l1:bell.qasm:braket",
+      "status": "FAIL",
+      "reason": "NotImplementedError: Implement run(qasm_str, target, shots)"
+    },
+    {
+      "case_id": "l1:ghz3.qasm:spinq",
+      "status": "FAIL",
+      "reason": "NotImplementedError: Implement run(qasm_str, target, shots)"
+    },
+    {
+      "case_id": "l1:ghz3.qasm:braket",
+      "status": "FAIL",
+      "reason": "NotImplementedError: Implement run(qasm_str, target, shots)"
+    }
+  ],
+  "notice": "Public self-check only; this report is not an official score."
+}
