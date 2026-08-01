@@ -1,27 +1,17 @@
 {
   "contract_version": "1.0",
   "suite": "public",
-  "generated_at": "2026-08-01T17:00:49.221662+00:00",
+  "generated_at": "2026-08-01T17:00:49.051498+00:00",
   "summary": {
     "passed": 0,
-    "failed": 4,
-    "total": 4
+    "failed": 2,
+    "total": 2
   },
   "cases": [
-    {
-      "case_id": "l1:bell.qasm:spinq",
-      "status": "FAIL",
-      "reason": "NotImplementedError: runner for target 'spinq' is not implemented"
-    },
     {
       "case_id": "l1:bell.qasm:braket",
       "status": "FAIL",
       "reason": "RuntimeError: Braket SDK is not installed; install starter-kit/requirements.txt"
-    },
-    {
-      "case_id": "l1:ghz3.qasm:spinq",
-      "status": "FAIL",
-      "reason": "NotImplementedError: runner for target 'spinq' is not implemented"
     },
     {
       "case_id": "l1:ghz3.qasm:braket",
