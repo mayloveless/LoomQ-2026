@@ -1,118 +1,51 @@
 # L1 设计规格
 
-## 1. 背景和目标
+## 目标与范围
 
-LoomQ L1 的核心是将 OpenQASM 2.0 转换为不同平台的目标 IR，并保证转换前后的量子语义一致。
+L1 将 OpenQASM 2.0 解析为一套平台无关的 Circuit IR，再分别转换或执行于 SpinQ、OriginQ 与 Braket。本实现支持官方 12 门、参数表达式、末尾测量映射及统一的 little-endian counts 结果。
 
-当前最低目标是复用同一套 Parser 和 IR，打通至少两个模拟器后端，通过 Bell 与 GHZ-3 公开评测，并获得 L1 参赛资格。后端优先级为 SpinQ、Braket、OriginQ。
+已完成：三种目标 IR、三个本地模拟器 Runner、统一结果 Schema、公开 evaluator 与隐藏风格组合电路回归。
 
-## 2. 当前范围
+暂不包含：L2 Agent 或界面、L3/RISC-V、电路优化、真机接入和非末尾测量。
 
-第一阶段：OpenQASM 2.0 Parser、平台无关 Circuit IR、SpinQ Serializer、Braket Serializer 和单元测试。
-
-第二阶段：SpinQ Runner、Braket Runner、统一结果 Schema，以及公开 evaluator 通过。
-
-第三阶段：补齐 12 种门、参数表达式、OriginIR Serializer 和 Runner，并测试 GHZ-5、QFT-4、Grover-3 和随机电路。
-
-暂不包含 L2 Agent、L2 前端与可视化、真机运行、L3、RISC-V 或电路优化器。
-
-## 3. 架构
+## 架构
 
 ```text
-OpenQASM 2.0 Source
-        ↓
-      Parser
-        ↓
-    Circuit IR
-      ↙     ↘
- SpinQ       Braket
-Serializer  Serializer
-      ↓       ↓
- Target Native IR
+OpenQASM 2.0
+      ↓
+   Parser ──语义校验──→ Circuit IR
+      ├──→ SpinQ Serializer   ──→ OpenQASM 2.0
+      ├──→ OriginQ Serializer ──→ OriginIR
+      └──→ Braket Serializer  ──→ OpenQASM 3
+
+Circuit IR
+      ├──→ SpinQ Runner   ──→ SpinQ 独立 Worker / Basic Simulator
+      ├──→ OriginQ Runner ──→ OriginQ 独立 Worker / CPUQVM
+      └──→ Braket Runner  ──→ Braket LocalSimulator
+                                   ↓
+                         统一 LoomQ Result Schema
 ```
 
-运行阶段：
+Parser 只解析与校验；IR 不含平台字段；Serializer 只生成目标文本；Runner 只调用 SDK 并归一化结果；`adapter.py` 仅路由入口。三个后端共享同一 Parser 与 IR，不为公开电路返回固定结果。
+
+## 后端与环境边界
+
+- 主 Python 环境安装 `amazon-braket-sdk==1.108.0`，用于 Braket LocalSimulator。
+- SpinQit `0.2.4` 在独立解释器中运行，由 SpinQ Worker 隔离其依赖。
+- pyQPanda `3.8.5` 在独立解释器中运行，由 OriginQ Worker 隔离其原生依赖。
+
+公开 `transpile()` 返回提交契约规定的纯文本目标 IR，不依赖 SDK：SpinQ 为 OpenQASM 2.0、OriginQ 为 OriginIR、Braket 为 OpenQASM 3。Runner 的私有 execution mode 则可使用仅为本地 SDK 执行准备的等价表示；该模式不作为公开 `transpile()` 输出。
+
+## IR、门与结果约束
+
+IR 表达量子/经典寄存器、量子位和经典位引用、门操作、参数、测量及操作顺序。支持的门为：
 
 ```text
-OpenQASM
-→ Parser
-→ Circuit IR
-→ Backend Runner
-→ Raw Backend Result
-→ Result Normalizer
-→ LoomQ Result Schema
+h x s sdg t tdg ry rz cx cu1 swap ccx
 ```
 
-Parser 和 Circuit IR 均只能有一套；后端差异仅存在于 Serializer、Runner 和结果归一化边界。
+`run()` 返回 `backend`、`job_id`、`shots`、`counts`、`bit_order`、`timestamp` 和可选 `meta`。`bit_order` 固定为 `little`，counts 总数必须等于 shots；实现不生成 mock counts。
 
-## 4. IR 设计原则
+## 验证边界
 
-IR 至少表达 OpenQASM 版本、量子寄存器、经典寄存器、门操作、参数化门、单量子位测量、整寄存器测量和操作顺序。
-
-建议核心模型：`Circuit`、`QuantumRegister`、`ClassicalRegister`、`QubitRef`、`ClassicalBitRef`、`GateOperation`、`MeasureOperation`。
-
-IR 必须平台无关、可序列化、可验证、可扩展至官方 12 种门，并保留执行顺序；不保存无必要的原始格式信息。
-
-## 5. Parser 责任
-
-Parser 负责去除注释、拆分语句、解析声明/门操作/测量，并校验寄存器存在、索引范围、门参数数量和整寄存器测量长度。对不支持语法必须给出明确错误。
-
-Parser 不负责平台格式转换、量子电路执行、生成测量结果或后端能力降级。
-
-## 6. Serializer 责任
-
-SpinQ 输出完整 OpenQASM 2.0，包含声明、门操作和测量。
-
-Braket 输出完整 OpenQASM 3，使用 `stdgates.inc`，将 `qreg` 转为 `qubit[n]`、`creg` 转为 `bit[n]`；`cx` 可规范化为 `cnot`，但必须保持操作顺序与测量语义。
-
-OriginQ 后续输出 OriginIR。
-
-## 7. 官方门范围
-
-官方 12 种门：
-
-```text
-h x s sdg t tdg
-ry rz
-cx cu1 swap
-ccx
-```
-
-第一阶段只要求公开用例所需的 `h`、`cx` 和 `measure`，但设计必须可扩展，不能成为 Bell/GHZ 专用逻辑。
-
-## 8. 执行结果 Schema
-
-`run()` 最终必须返回 `backend`、`job_id`、`shots`、`counts`、`bit_order`、`timestamp`，并可选返回 `meta`。
-
-- `shots` 是正整数；`counts` 非空且总数等于 `shots`。
-- counts 的 key 是二进制字符串，value 是非负整数。
-- `bit_order` 固定为 `little`。
-- 禁止 `meta.is_mock = true`。
-
-## 9. 测试策略
-
-单元测试分为 Parser、IR 校验、Serializer、Adapter 路由、Runner、结果归一化和官方 evaluator 测试。
-
-第一阶段验收：
-
-```bash
-cd starter-kit
-python -m unittest discover -s tests -v
-```
-
-第二阶段验收：
-
-```bash
-python evaluator.py \
-  --level l1 \
-  --target spinq,braket \
-  --json-out report.json
-```
-
-## 10. 完成标准
-
-L1 资格完成要求 Bell 与 GHZ-3 分别在 SpinQ 和 Braket 后端通过，Fidelity 均达到官方阈值；实现不得硬编码用例或返回 mock 结果，并必须使用统一 Parser 和 IR。
-
-## 11. 后续与 L2 的关系
-
-未来 L2 可复用 IR 生成结构化电路，使用 Parser 验证 AI 生成的 QASM，使用 Serializer 输出多平台格式，使用 Runner 执行电路，并使用统一 Schema 展示结果；Parser 错误可供 Agent 自动修复。这里仅定义接口关系，不设计具体 L2 产品。
+测试覆盖 Parser、表达式、测量映射、Serializer、Adapter、Runner 与隐藏风格组合电路。公开 evaluator 验证 Bell 和 GHZ-3 在 SpinQ、OriginQ、Braket 三后端的转换和本地执行。完整命令及环境准备见 [l1-runbook.md](l1-runbook.md)。

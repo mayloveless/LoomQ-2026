@@ -10,7 +10,7 @@
 
 - [ ] L1 真机
 - [ ] L2 交互体验
-- [ ] 工程与产品化
+- [x] 工程与产品化
 - [ ] 自定义量子 RISC-V Bonus
 - [ ] 新手引导与视觉叙事 Bonus
 
@@ -59,10 +59,10 @@ evidence/files/spinq-screenshot.png
 已有内容可以直接引用主 README 或其他项目文档，不必复制到本目录。
 
 ```text
-干净环境中的构建和启动命令：[填写命令或文档路径]
-架构说明：[填写文档路径，或用几句话说明主要模块]
-目标用户和使用场景：[填写]
-完整使用流程：[填写文档、截图或演示路径]
+干净环境中的构建和启动命令：`cd starter_kit && docker build --no-cache -t loomq-l1 . && docker run --rm loomq-l1`
+架构说明：`starter_kit/docs/l1-spec.md`；统一 Parser/Circuit IR，经 SpinQ、OriginQ、Braket 的 Serializer 与 Runner 分别转换和执行。
+目标用户和使用场景：需要将 OpenQASM 2.0 电路在 SpinQ、OriginQ 或 Braket 本地模拟器上复现与验证的量子计算开发者。
+完整使用流程：`starter_kit/docs/l1-runbook.md`；公开三后端报告为 `starter_kit/evidence/files/l1-public-report.json`。
 ```
 
 工作人员会按最终 commit 实际构建和启动，并检查文档与代码是否一致、产品是否真的降低了量子计算的使用门槛。
