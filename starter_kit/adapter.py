@@ -8,7 +8,7 @@ the functions directly or delegate to another language/runtime with subprocess.
 from typing import Any, Dict, List, Tuple
 
 from loomq.parser import parse_qasm
-from loomq.runners import run_braket
+from loomq.runners import run_braket, run_spinq
 from loomq.serializers import serialize_braket, serialize_spinq
 
 
@@ -33,10 +33,12 @@ def transpile(qasm_str: str, target: str) -> str:
 
 def run(qasm_str: str, target: str, shots: int) -> Dict[str, Any]:
     """Execute a circuit and return the unified result schema from the rules."""
+    if target == "spinq":
+        return run_spinq(parse_qasm(qasm_str), shots)
     if target == "braket":
         # Adapter 只负责路由；SDK 调用和结果归一化由 Runner 完成。
         return run_braket(parse_qasm(qasm_str), shots)
-    if target in ("spinq", "originq"):
+    if target == "originq":
         raise NotImplementedError("runner for target %r is not implemented" % target)
     raise ValueError(
         "unsupported run target %r; expected one of: %s"

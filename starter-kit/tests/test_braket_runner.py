@@ -138,11 +138,9 @@ class AdapterRunTests(unittest.TestCase):
         self.assertIsInstance(circuit, Circuit)
         self.assertEqual(32, shots)
 
-    def test_other_known_runners_remain_unimplemented(self) -> None:
-        for target in ("spinq", "originq"):
-            with self.subTest(target=target):
-                with self.assertRaisesRegex(NotImplementedError, "not implemented"):
-                    adapter.run("not parsed", target, 1)
+    def test_originq_runner_remains_unimplemented(self) -> None:
+        with self.assertRaisesRegex(NotImplementedError, "not implemented"):
+            adapter.run("not parsed", "originq", 1)
 
     def test_unknown_run_target_is_rejected_before_parsing(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported run target"):
