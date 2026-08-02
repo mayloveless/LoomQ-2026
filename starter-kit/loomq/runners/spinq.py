@@ -1,7 +1,12 @@
 """SpinQit 基础模拟器 Runner 与 counts 归一化。"""
 
 import importlib
+import json
+import os
+import subprocess
+import sys
 from collections import Counter
+from pathlib import Path
 from typing import Any, Dict, Mapping, NamedTuple, Sequence, Tuple, Type
 from uuid import uuid4
 
@@ -12,6 +17,11 @@ from ..measurements import (
     quantum_bit_indices,
 )
 from ..results import create_result, validate_shots
+from ..serializers.spinq import serialize_spinq
+
+
+_WORKER_TIMEOUT_SECONDS = 120
+_STDERR_LIMIT = 4000
 
 
 class SpinQSDK(NamedTuple):
@@ -29,7 +39,8 @@ def _load_spinq_sdk() -> SpinQSDK:
         spinqit = importlib.import_module("spinqit")
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError(
-            "SpinQit SDK is not installed; install starter-kit/requirements.txt"
+            "SpinQit SDK is not installed; install starter-kit/requirements-spinq.txt "
+            "in the isolated SpinQ environment"
         ) from exc
     return SpinQSDK(
         config_class=spinqit.BasicSimulatorConfig,
@@ -115,8 +126,8 @@ def normalize_spinq_counts(
     return dict(normalized)
 
 
-def run_spinq(circuit: Circuit, shots: int) -> Dict[str, Any]:
-    """在 SpinQit native compiler 与 Basic Simulator 上执行 Circuit。"""
+def run_spinq_native(circuit: Circuit, shots: int) -> Dict[str, Any]:
+    """仅在安装了 SpinQit 的独立环境中执行。"""
     validate_shots(shots)
     mapping = _validate_final_measurements(circuit)
     measured_qubits = sorted({quantum for quantum, _ in mapping})
@@ -146,3 +157,102 @@ def run_spinq(circuit: Circuit, shots: int) -> Dict[str, Any]:
             "optimization_level": 0,
         },
     )
+
+
+def _starter_kit_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _find_spinq_python() -> Path:
+    configured = os.environ.get("LOOMQ_SPINQ_PYTHON")
+    if configured:
+        path = Path(configured).expanduser()
+        if path.is_file():
+            return path
+        raise RuntimeError(
+            "SpinQ isolated Python was not found; set LOOMQ_SPINQ_PYTHON"
+        )
+
+    root = _starter_kit_root()
+    candidates = (
+        Path("/opt/spinq-venv/bin/python"),
+        root / ".venv-spinq" / "bin" / "python",
+        root / ".venv-spinq" / "Scripts" / "python.exe",
+    )
+    for path in candidates:
+        if path.is_file():
+            return path
+    raise RuntimeError("SpinQ isolated Python was not found; set LOOMQ_SPINQ_PYTHON")
+
+
+def _spinq_package_directory(python_path: Path) -> Path:
+    # 不解析 python symlink，否则会离开虚拟环境并定位到系统解释器目录。
+    virtualenv_root = python_path.expanduser().absolute().parent.parent
+    matches = sorted(virtualenv_root.glob("lib/python*/site-packages/spinqit"))
+    if not matches:
+        raise RuntimeError("SpinQit package directory was not found in isolated Python")
+    return matches[0]
+
+
+def _worker_environment(python_path: Path) -> Dict[str, str]:
+    environment = os.environ.copy()
+    if sys.platform == "darwin":
+        package_directory = str(_spinq_package_directory(python_path))
+        existing = environment.get("DYLD_LIBRARY_PATH")
+        environment["DYLD_LIBRARY_PATH"] = (
+            package_directory + os.pathsep + existing
+            if existing
+            else package_directory
+        )
+    return environment
+
+
+def _stderr_excerpt(stderr: str) -> str:
+    message = stderr.strip()
+    if len(message) <= _STDERR_LIMIT:
+        return message
+    return "..." + message[-_STDERR_LIMIT:]
+
+
+def run_spinq(circuit: Circuit, shots: int) -> Dict[str, Any]:
+    """通过独立 Python Worker 执行 SpinQit，避免与 Braket 依赖冲突。"""
+    validate_shots(shots)
+    python_path = _find_spinq_python()
+    request = json.dumps(
+        {"qasm": serialize_spinq(circuit), "shots": shots},
+        ensure_ascii=False,
+    )
+    command = [str(python_path), "-m", "loomq.workers.spinq_worker"]
+
+    try:
+        completed = subprocess.run(
+            command,
+            input=request,
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=_WORKER_TIMEOUT_SECONDS,
+            check=False,
+            cwd=str(_starter_kit_root()),
+            env=_worker_environment(python_path),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "SpinQ worker timed out after %d seconds" % _WORKER_TIMEOUT_SECONDS
+        ) from exc
+
+    if completed.returncode != 0:
+        details = _stderr_excerpt(completed.stderr)
+        suffix = ": %s" % details if details else ""
+        raise RuntimeError(
+            "SpinQ worker failed with exit code %d%s"
+            % (completed.returncode, suffix)
+        )
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("SpinQ worker returned invalid JSON") from exc
+    if not isinstance(result, dict):
+        raise RuntimeError("SpinQ worker result must be a JSON object")
+    return result

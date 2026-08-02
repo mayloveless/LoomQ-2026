@@ -1,6 +1,9 @@
 """SpinQ Runner 的 native gate、位序、SDK 边界和集成测试。"""
 
-import importlib.util
+import json
+import os
+import subprocess
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -14,14 +17,17 @@ from loomq.parser import parse_qasm
 from loomq.runners.spinq import (
     SpinQSDK,
     _build_spinq_circuit,
+    _find_spinq_python,
     _load_spinq_sdk,
+    _worker_environment,
     normalize_spinq_counts,
     run_spinq,
+    run_spinq_native,
 )
 
 
 STARTER_KIT = Path(__file__).resolve().parents[1]
-SPINQ_INSTALLED = importlib.util.find_spec("spinqit") is not None
+SPINQ_WORKER_CONFIGURED = bool(os.environ.get("LOOMQ_SPINQ_PYTHON"))
 
 
 def qasm(body: str, qreg: str = "qreg q[2];", creg: str = "creg c[2];") -> str:
@@ -174,7 +180,7 @@ class SpinQRunnerTests(unittest.TestCase):
         )
 
         with mock.patch("loomq.runners.spinq._load_spinq_sdk", return_value=sdk):
-            result = run_spinq(circuit, 2)
+            result = run_spinq_native(circuit, 2)
 
         self.assertEqual("spinq_basic_simulator", result["backend"])
         self.assertEqual({"00": 1, "11": 1}, result["counts"])
@@ -189,21 +195,152 @@ class SpinQRunnerTests(unittest.TestCase):
         circuit = parse_qasm(qasm("h q[0];"))
 
         with self.assertRaisesRegex(ValueError, "at least one measurement"):
-            run_spinq(circuit, 1)
+            run_spinq_native(circuit, 1)
 
     def test_mid_circuit_measurement_is_rejected(self) -> None:
         circuit = parse_qasm(qasm("measure q[0] -> c[0]; h q[1];"))
 
         with self.assertRaisesRegex(ValueError, "final measurements only"):
-            run_spinq(circuit, 1)
+            run_spinq_native(circuit, 1)
 
     def test_missing_sdk_has_clear_message(self) -> None:
         with mock.patch(
             "loomq.runners.spinq.importlib.import_module",
             side_effect=ModuleNotFoundError("No module named 'spinqit'"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "install starter-kit/requirements.txt"):
+            with self.assertRaisesRegex(RuntimeError, "requirements-spinq.txt"):
                 _load_spinq_sdk()
+
+
+class SpinQWorkerClientTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.circuit = parse_qasm(qasm("measure q -> c;"))
+        self.result = {
+            "backend": "spinq_basic_simulator",
+            "job_id": "spinq-local-test",
+            "shots": 2,
+            "counts": {"00": 2},
+            "bit_order": "little",
+            "timestamp": "2026-08-02T00:00:00Z",
+            "meta": {"simulator": "basic"},
+        }
+
+    def test_run_spinq_uses_worker_without_loading_sdk(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(self.result), stderr=""
+        )
+        with mock.patch(
+            "loomq.runners.spinq._find_spinq_python",
+            return_value=Path("/isolated/bin/python"),
+        ), mock.patch(
+            "loomq.runners.spinq._worker_environment", return_value={}
+        ), mock.patch(
+            "loomq.runners.spinq.subprocess.run", return_value=completed
+        ) as process, mock.patch(
+            "loomq.runners.spinq._load_spinq_sdk"
+        ) as sdk_loader:
+            result = run_spinq(self.circuit, 2)
+
+        self.assertEqual(self.result, result)
+        sdk_loader.assert_not_called()
+        command = process.call_args.args[0]
+        self.assertEqual(
+            ["/isolated/bin/python", "-m", "loomq.workers.spinq_worker"],
+            command,
+        )
+        request = json.loads(process.call_args.kwargs["input"])
+        self.assertEqual(2, request["shots"])
+        self.assertIn("OPENQASM 2.0;", request["qasm"])
+        self.assertEqual("utf-8", process.call_args.kwargs["encoding"])
+        self.assertFalse(process.call_args.kwargs["check"])
+
+    def test_configured_python_has_priority(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            python_path = Path(directory) / "custom-python"
+            python_path.touch()
+            with mock.patch.dict(
+                os.environ, {"LOOMQ_SPINQ_PYTHON": str(python_path)}
+            ):
+                self.assertEqual(python_path, _find_spinq_python())
+
+    def test_worker_nonzero_exit_is_reported(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=3, stdout="", stderr="native failure"
+        )
+        with mock.patch(
+            "loomq.runners.spinq._find_spinq_python",
+            return_value=Path("/isolated/bin/python"),
+        ), mock.patch(
+            "loomq.runners.spinq._worker_environment", return_value={}
+        ), mock.patch(
+            "loomq.runners.spinq.subprocess.run", return_value=completed
+        ):
+            with self.assertRaisesRegex(RuntimeError, "exit code 3: native failure"):
+                run_spinq(self.circuit, 2)
+
+    def test_invalid_worker_json_is_reported(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not-json", stderr=""
+        )
+        with mock.patch(
+            "loomq.runners.spinq._find_spinq_python",
+            return_value=Path("/isolated/bin/python"),
+        ), mock.patch(
+            "loomq.runners.spinq._worker_environment", return_value={}
+        ), mock.patch(
+            "loomq.runners.spinq.subprocess.run", return_value=completed
+        ):
+            with self.assertRaisesRegex(RuntimeError, "invalid JSON"):
+                run_spinq(self.circuit, 2)
+
+    def test_non_object_worker_json_is_reported(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="[]", stderr=""
+        )
+        with mock.patch(
+            "loomq.runners.spinq._find_spinq_python",
+            return_value=Path("/isolated/bin/python"),
+        ), mock.patch(
+            "loomq.runners.spinq._worker_environment", return_value={}
+        ), mock.patch(
+            "loomq.runners.spinq.subprocess.run", return_value=completed
+        ):
+            with self.assertRaisesRegex(RuntimeError, "JSON object"):
+                run_spinq(self.circuit, 2)
+
+    def test_worker_timeout_is_reported(self) -> None:
+        with mock.patch(
+            "loomq.runners.spinq._find_spinq_python",
+            return_value=Path("/isolated/bin/python"),
+        ), mock.patch(
+            "loomq.runners.spinq._worker_environment", return_value={}
+        ), mock.patch(
+            "loomq.runners.spinq.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("worker", 120),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "timed out after 120 seconds"):
+                run_spinq(self.circuit, 2)
+
+    def test_macos_worker_environment_preserves_dyld_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            virtualenv = Path(directory) / ".venv-spinq"
+            python_path = virtualenv / "bin" / "python"
+            package_path = (
+                virtualenv / "lib" / "python3.10" / "site-packages" / "spinqit"
+            )
+            python_path.parent.mkdir(parents=True)
+            package_path.mkdir(parents=True)
+            python_path.touch()
+
+            with mock.patch("loomq.runners.spinq.sys.platform", "darwin"), mock.patch.dict(
+                os.environ, {"DYLD_LIBRARY_PATH": "/existing"}, clear=False
+            ):
+                environment = _worker_environment(python_path)
+
+        self.assertEqual(
+            str(package_path) + os.pathsep + "/existing",
+            environment["DYLD_LIBRARY_PATH"],
+        )
 
 
 class AdapterSpinQTests(unittest.TestCase):
@@ -220,7 +357,9 @@ class AdapterSpinQTests(unittest.TestCase):
         self.assertEqual(32, shots)
 
 
-@unittest.skipUnless(SPINQ_INSTALLED, "spinqit is not installed on this platform")
+@unittest.skipUnless(
+    SPINQ_WORKER_CONFIGURED, "LOOMQ_SPINQ_PYTHON is not configured"
+)
 class SpinQIntegrationTests(unittest.TestCase):
     def run_public_circuit(self, name: str, expected: dict) -> None:
         source = (STARTER_KIT / "circuits" / name).read_text(encoding="utf-8")
