@@ -56,8 +56,20 @@ def fake_sdk() -> SpinQSDK:
     return SpinQSDK(
         config_class=mock.Mock,
         circuit_class=FakeNativeCircuit,
-        cx_gate="CX",
-        h_gate="H",
+        gates={
+            "h": "H",
+            "x": "X",
+            "s": "S",
+            "sdg": "Sd",
+            "t": "T",
+            "tdg": "Td",
+            "ry": "Ry",
+            "rz": "Rz",
+            "cx": "CX",
+            "cu1": "CP",
+            "swap": "SWAP",
+            "ccx": "CCX",
+        },
         simulator_factory=mock.Mock,
         compiler_factory=mock.Mock,
     )
@@ -134,16 +146,125 @@ class SpinQNativeCircuitTests(unittest.TestCase):
 
         self.assertEqual([("H", "q2"), ("CX", ("q1", "q2"))], native.operations)
 
+    def test_all_unparameterized_single_qubit_gates_use_scalar_operand(self) -> None:
+        circuit = parse_qasm(
+            qasm(
+                "h q[0]; x q[0]; s q[0]; sdg q[0]; "
+                "t q[0]; tdg q[0]; measure q[0] -> c[0];"
+            )
+        )
+
+        native = _build_spinq_circuit(circuit, fake_sdk())
+
+        self.assertEqual(
+            [
+                ("H", "q0"),
+                ("X", "q0"),
+                ("S", "q0"),
+                ("Sd", "q0"),
+                ("T", "q0"),
+                ("Td", "q0"),
+            ],
+            native.operations,
+        )
+
+    def test_parameterized_single_qubit_gates_pass_float_after_operand(self) -> None:
+        circuit = parse_qasm(
+            qasm("ry(pi/2) q[0]; rz(-pi/4) q[1]; measure q -> c;")
+        )
+
+        native = _build_spinq_circuit(circuit, fake_sdk())
+
+        self.assertEqual("Ry", native.operations[0][0])
+        self.assertEqual("q0", native.operations[0][1])
+        self.assertAlmostEqual(1.5707963267948966, native.operations[0][2])
+        self.assertEqual("Rz", native.operations[1][0])
+        self.assertEqual("q1", native.operations[1][1])
+        self.assertAlmostEqual(-0.7853981633974483, native.operations[1][2])
+
+    def test_two_qubit_gates_preserve_control_target_order(self) -> None:
+        circuit = parse_qasm(
+            qasm("cx q[1], q[0]; swap q[0], q[1]; measure q -> c;")
+        )
+
+        native = _build_spinq_circuit(circuit, fake_sdk())
+
+        self.assertEqual(
+            [("CX", ("q1", "q0")), ("SWAP", ("q0", "q1"))],
+            native.operations,
+        )
+
+    def test_cu1_maps_to_cp_with_operands_then_parameter(self) -> None:
+        circuit = parse_qasm(qasm("cu1(pi/2) q[1], q[0]; measure q -> c;"))
+
+        native = _build_spinq_circuit(circuit, fake_sdk())
+
+        self.assertEqual("CP", native.operations[0][0])
+        self.assertEqual(("q1", "q0"), native.operations[0][1])
+        self.assertAlmostEqual(1.5707963267948966, native.operations[0][2])
+
+    def test_ccx_uses_official_decomposition_in_exact_order(self) -> None:
+        circuit = parse_qasm(
+            qasm(
+                "ccx q[2], q[0], q[1]; measure q -> c;",
+                qreg="qreg q[3];",
+                creg="creg c[3];",
+            )
+        )
+
+        native = _build_spinq_circuit(circuit, fake_sdk())
+
+        self.assertEqual(
+            [
+                ("H", "q1"),
+                ("CX", ("q0", "q1")),
+                ("Td", "q1"),
+                ("CX", ("q2", "q1")),
+                ("T", "q1"),
+                ("CX", ("q0", "q1")),
+                ("Td", "q1"),
+                ("CX", ("q2", "q1")),
+                ("T", "q0"),
+                ("T", "q1"),
+                ("H", "q1"),
+                ("CX", ("q2", "q0")),
+                ("T", "q2"),
+                ("Td", "q0"),
+                ("CX", ("q2", "q0")),
+            ],
+            native.operations,
+        )
+
     def test_unsupported_gate_is_rejected(self) -> None:
         circuit = parse_qasm(qasm("measure q -> c;"))
         unsupported = replace(
             circuit,
-            operations=(GateOperation("x", (QubitRef("q", 0),)),)
+            operations=(GateOperation("unknown", (QubitRef("q", 0),)),)
             + circuit.operations,
         )
 
-        with self.assertRaisesRegex(ValueError, "does not support gate 'x'"):
+        with self.assertRaisesRegex(ValueError, "does not support gate 'unknown'"):
             _build_spinq_circuit(unsupported, fake_sdk())
+
+    def test_missing_sdk_gate_has_clear_error(self) -> None:
+        circuit = parse_qasm(qasm("x q[0]; measure q -> c;"))
+        sdk = fake_sdk()._replace(
+            gates={name: gate for name, gate in fake_sdk().gates.items() if name != "x"}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "missing required gate 'x'"):
+            _build_spinq_circuit(circuit, sdk)
+
+    def test_invalid_ir_gate_shape_is_rejected(self) -> None:
+        circuit = parse_qasm(qasm("measure q -> c;"))
+        invalid = replace(
+            circuit,
+            operations=(GateOperation("ry", (QubitRef("q", 0),)),)
+            + circuit.operations,
+        )
+
+        with self.assertRaisesRegex(ValueError, "expects 1 parameter"):
+            _build_spinq_circuit(invalid, fake_sdk())
 
 
 class SpinQRunnerTests(unittest.TestCase):
@@ -173,8 +294,7 @@ class SpinQRunnerTests(unittest.TestCase):
         sdk = SpinQSDK(
             config_class=FakeConfig,
             circuit_class=FakeNativeCircuit,
-            cx_gate="CX",
-            h_gate="H",
+            gates=fake_sdk().gates,
             simulator_factory=mock.Mock(return_value=simulator),
             compiler_factory=mock.Mock(return_value=compiler),
         )
@@ -209,6 +329,29 @@ class SpinQRunnerTests(unittest.TestCase):
             side_effect=ModuleNotFoundError("No module named 'spinqit'"),
         ):
             with self.assertRaisesRegex(RuntimeError, "requirements-spinq.txt"):
+                _load_spinq_sdk()
+
+    def test_missing_required_sdk_gate_names_qasm_gate(self) -> None:
+        exports = {
+            "H": object(),
+            "X": object(),
+            "S": object(),
+            "Sd": object(),
+            "T": object(),
+            "Td": object(),
+            "Ry": object(),
+            "Rz": object(),
+            "CX": object(),
+            "SWAP": object(),
+            "CCX": object(),
+        }
+        incomplete_sdk = SimpleNamespace(**exports)
+
+        with mock.patch(
+            "loomq.runners.spinq.importlib.import_module",
+            return_value=incomplete_sdk,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "required gate.*cu1"):
                 _load_spinq_sdk()
 
 

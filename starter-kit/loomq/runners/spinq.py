@@ -27,10 +27,46 @@ _STDERR_LIMIT = 4000
 class SpinQSDK(NamedTuple):
     config_class: Type[Any]
     circuit_class: Type[Any]
-    cx_gate: Any
-    h_gate: Any
+    gates: Mapping[str, Any]
     simulator_factory: Any
     compiler_factory: Any
+
+
+class SpinQGateSpec(NamedTuple):
+    qubit_count: int
+    parameter_count: int
+
+
+# QASM 名称与 SpinQit 0.2.4 顶层导出名称分离，便于集中检查 SDK 完整性。
+_SPINQ_GATE_EXPORTS: Mapping[str, str] = {
+    "h": "H",
+    "x": "X",
+    "s": "S",
+    "sdg": "Sd",
+    "t": "T",
+    "tdg": "Td",
+    "ry": "Ry",
+    "rz": "Rz",
+    "cx": "CX",
+    "cu1": "CP",
+    "swap": "SWAP",
+    "ccx": "CCX",
+}
+
+_SPINQ_GATE_SPECS: Mapping[str, SpinQGateSpec] = {
+    "h": SpinQGateSpec(1, 0),
+    "x": SpinQGateSpec(1, 0),
+    "s": SpinQGateSpec(1, 0),
+    "sdg": SpinQGateSpec(1, 0),
+    "t": SpinQGateSpec(1, 0),
+    "tdg": SpinQGateSpec(1, 0),
+    "ry": SpinQGateSpec(1, 1),
+    "rz": SpinQGateSpec(1, 1),
+    "cx": SpinQGateSpec(2, 0),
+    "cu1": SpinQGateSpec(2, 1),
+    "swap": SpinQGateSpec(2, 0),
+    "ccx": SpinQGateSpec(3, 0),
+}
 
 
 def _load_spinq_sdk() -> SpinQSDK:
@@ -42,11 +78,24 @@ def _load_spinq_sdk() -> SpinQSDK:
             "SpinQit SDK is not installed; install starter-kit/requirements-spinq.txt "
             "in the isolated SpinQ environment"
         ) from exc
+    missing_gates = [
+        qasm_name
+        for qasm_name, export_name in _SPINQ_GATE_EXPORTS.items()
+        if not hasattr(spinqit, export_name)
+    ]
+    if missing_gates:
+        raise RuntimeError(
+            "SpinQit SDK is missing required gate(s): %s"
+            % ", ".join(missing_gates)
+        )
+    gates = {
+        qasm_name: getattr(spinqit, export_name)
+        for qasm_name, export_name in _SPINQ_GATE_EXPORTS.items()
+    }
     return SpinQSDK(
         config_class=spinqit.BasicSimulatorConfig,
         circuit_class=spinqit.Circuit,
-        cx_gate=spinqit.CX,
-        h_gate=spinqit.H,
+        gates=gates,
         simulator_factory=spinqit.get_basic_simulator,
         compiler_factory=spinqit.get_compiler,
     )
@@ -66,6 +115,55 @@ def _validate_final_measurements(circuit: Circuit) -> Tuple[Tuple[int, int], ...
     return mapping
 
 
+def _append_native_gate(
+    native_circuit: Any,
+    sdk: SpinQSDK,
+    gate_name: str,
+    operands: Tuple[Any, ...],
+    parameters: Tuple[float, ...] = (),
+) -> None:
+    spec = _SPINQ_GATE_SPECS[gate_name]
+    try:
+        native_gate = sdk.gates[gate_name]
+    except KeyError as exc:
+        raise RuntimeError(
+            "SpinQ SDK gate mapping is missing required gate %r" % gate_name
+        ) from exc
+    native_operand: Any = operands[0] if spec.qubit_count == 1 else operands
+    if spec.parameter_count == 0:
+        native_circuit << (native_gate, native_operand)
+    else:
+        # SpinQit 0.2.4 的参数位于 gate 和 qubit(s) 之后，且接受 float。
+        native_circuit << (native_gate, native_operand, float(parameters[0]))
+
+
+def _append_ccx_decomposition(
+    native_circuit: Any, sdk: SpinQSDK, operands: Tuple[Any, ...]
+) -> None:
+    """按官方 qelib1 恒等式展开 CCX。"""
+    control_a, control_b, target = operands
+    # SpinQit 0.2.4 原生 CCX 在控制位叠加态上会终止 Basic Simulator 进程。
+    instructions = (
+        ("h", (target,)),
+        ("cx", (control_b, target)),
+        ("tdg", (target,)),
+        ("cx", (control_a, target)),
+        ("t", (target,)),
+        ("cx", (control_b, target)),
+        ("tdg", (target,)),
+        ("cx", (control_a, target)),
+        ("t", (control_b,)),
+        ("t", (target,)),
+        ("h", (target,)),
+        ("cx", (control_a, control_b)),
+        ("t", (control_a,)),
+        ("tdg", (control_b,)),
+        ("cx", (control_a, control_b)),
+    )
+    for gate_name, gate_operands in instructions:
+        _append_native_gate(native_circuit, sdk, gate_name, gate_operands)
+
+
 def _build_spinq_circuit(circuit: Circuit, sdk: SpinQSDK) -> Any:
     native_circuit = sdk.circuit_class()
     qubit_count = sum(register.size for register in circuit.quantum_registers)
@@ -77,13 +175,32 @@ def _build_spinq_circuit(circuit: Circuit, sdk: SpinQSDK) -> Any:
     for operation in circuit.operations:
         if not isinstance(operation, GateOperation):
             continue
+        spec = _SPINQ_GATE_SPECS.get(operation.name)
+        if spec is None:
+            raise ValueError(
+                "SpinQ runner does not support gate %r" % operation.name
+            )
+        if len(operation.qubits) != spec.qubit_count:
+            raise ValueError(
+                "SpinQ gate %r expects %d qubit operand(s), got %d"
+                % (operation.name, spec.qubit_count, len(operation.qubits))
+            )
+        if len(operation.parameters) != spec.parameter_count:
+            raise ValueError(
+                "SpinQ gate %r expects %d parameter(s), got %d"
+                % (operation.name, spec.parameter_count, len(operation.parameters))
+            )
         operands = tuple(native_qubits[global_indices[item]] for item in operation.qubits)
-        if operation.name == "h" and len(operands) == 1:
-            native_circuit << (sdk.h_gate, operands[0])
-        elif operation.name == "cx" and len(operands) == 2:
-            native_circuit << (sdk.cx_gate, (operands[0], operands[1]))
+        if operation.name == "ccx":
+            _append_ccx_decomposition(native_circuit, sdk, operands)
         else:
-            raise ValueError("SpinQ runner does not support gate %r" % operation.name)
+            _append_native_gate(
+                native_circuit,
+                sdk,
+                operation.name,
+                operands,
+                operation.parameters,
+            )
     return native_circuit
 
 
