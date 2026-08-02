@@ -1,7 +1,7 @@
 {
   "contract_version": "1.0",
   "suite": "public",
-  "generated_at": "2026-08-02T03:20:58.165785+00:00",
+  "generated_at": "2026-08-02T06:25:28.686138+00:00",
   "summary": {
     "passed": 2,
     "failed": 0,
@@ -12,13 +12,13 @@
       "case_id": "l1:bell.qasm:braket",
       "status": "PASS",
       "reason": "fidelity threshold met",
-      "fidelity": 0.998792
+      "fidelity": 0.99154
     },
     {
       "case_id": "l1:ghz3.qasm:braket",
       "status": "PASS",
       "reason": "fidelity threshold met",
-      "fidelity": 0.999914
+      "fidelity": 0.993612
     }
   ],
   "notice": "Public self-check only; this report is not an official score."
