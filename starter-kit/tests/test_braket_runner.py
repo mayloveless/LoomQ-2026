@@ -138,9 +138,17 @@ class AdapterRunTests(unittest.TestCase):
         self.assertIsInstance(circuit, Circuit)
         self.assertEqual(32, shots)
 
-    def test_originq_runner_remains_unimplemented(self) -> None:
-        with self.assertRaisesRegex(NotImplementedError, "not implemented"):
-            adapter.run("not parsed", "originq", 1)
+    def test_adapter_routes_parsed_circuit_to_originq(self) -> None:
+        source = qasm("measure q -> c;")
+        expected = {"backend": "sentinel"}
+
+        with mock.patch("adapter.run_originq", return_value=expected) as runner:
+            result = adapter.run(source, "originq", 32)
+
+        self.assertIs(expected, result)
+        circuit, shots = runner.call_args.args
+        self.assertIsInstance(circuit, Circuit)
+        self.assertEqual(32, shots)
 
     def test_unknown_run_target_is_rejected_before_parsing(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported run target"):

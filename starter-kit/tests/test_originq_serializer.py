@@ -2,6 +2,7 @@
 
 import math
 import unittest
+from unittest import mock
 
 import adapter
 from loomq.ir import Circuit, GateOperation, QubitRef
@@ -39,6 +40,28 @@ class OriginQSerializerTests(unittest.TestCase):
             ],
             lines[2:14],
         )
+
+    def test_execution_mode_only_uses_pyqpanda_385_compatible_syntax(self) -> None:
+        source = HEADER + (
+            "qreg q[2]; creg c[2]; sdg q[0]; tdg q[1]; "
+            "ry(pi/2) q[0]; rz(-pi/4) q[1]; cu1(pi/8) q[0], q[1]; "
+            "measure q -> c;"
+        )
+
+        public = serialize_originq(parse_qasm(source))
+        execution = serialize_originq(parse_qasm(source), execution_mode=True)
+
+        self.assertIn("SDAG q[0]", public)
+        self.assertIn("TDAG q[1]", public)
+        self.assertIn("RY(%s) q[0]" % format(math.pi / 2, ".17g"), public)
+        self.assertIn("CU1(%s) q[0], q[1]" % format(math.pi / 8, ".17g"), public)
+        self.assertNotIn("SDAG", execution)
+        self.assertNotIn("TDAG", execution)
+        self.assertIn("DAGGER\nS q[0]\nENDDAGGER", execution)
+        self.assertIn("DAGGER\nT q[1]\nENDDAGGER", execution)
+        self.assertIn("RY q[0],(%s)" % format(math.pi / 2, ".17g"), execution)
+        self.assertIn("RZ q[1],(%s)" % format(-math.pi / 4, ".17g"), execution)
+        self.assertIn("CR q[0], q[1],(%s)" % format(math.pi / 8, ".17g"), execution)
 
     def test_multiple_registers_and_crossed_measurements_are_flattened(self) -> None:
         source = HEADER + (
@@ -78,11 +101,14 @@ class OriginQSerializerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expects 0 parameters"):
             serialize_originq(circuit)
 
-    def test_adapter_transpile_routes_originq_and_runner_is_unimplemented(self) -> None:
+    def test_adapter_transpile_routes_originq_and_run_routes_parsed_ir(self) -> None:
         source = HEADER + "qreg q[1]; creg c[1]; x q[0]; measure q -> c;"
         self.assertEqual("QINIT 1\nCREG 1\nX q[0]\nMEASURE q[0], c[0]\n", adapter.transpile(source, "originq"))
-        with self.assertRaisesRegex(NotImplementedError, "originq"):
-            adapter.run(source, "originq", 1)
+        expected = {"backend": "sentinel"}
+        with mock.patch("adapter.run_originq", return_value=expected) as runner:
+            self.assertIs(expected, adapter.run(source, "originq", 1))
+        self.assertIsInstance(runner.call_args.args[0], Circuit)
+        self.assertEqual(1, runner.call_args.args[1])
 
 
 if __name__ == "__main__":

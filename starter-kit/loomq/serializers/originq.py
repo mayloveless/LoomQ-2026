@@ -43,8 +43,12 @@ def _measurement_count(operation: MeasureOperation) -> int:
     raise ValueError("invalid measurement quantum reference in Circuit IR")
 
 
-def serialize_originq(circuit: Circuit) -> str:
-    """Return a complete OriginIR program with globally flattened bit indices."""
+def serialize_originq(circuit: Circuit, *, execution_mode: bool = False) -> str:
+    """Return a complete OriginIR program with globally flattened bit indices.
+
+    默认模式严格遵守公开合同；执行模式仅处理 pyQPanda 3.8.5 已实测的
+    OriginIR 解析差异，不改变公开 ``transpile()`` 的输出。
+    """
     qubit_indices = quantum_bit_indices(circuit)
     mappings = iter(measurement_mapping(circuit))
     lines: List[str] = [
@@ -79,12 +83,19 @@ def serialize_originq(circuit: Circuit) -> str:
             operands = ", ".join(
                 "q[%d]" % qubit_indices[qubit] for qubit in operation.qubits
             )
-            parameters = ""
-            if operation.parameters:
-                parameters = "(%s)" % ", ".join(
-                    format(value, ".17g") for value in operation.parameters
-                )
-            lines.append("%s%s %s" % (origin_name, parameters, operands))
+            parameter_values = ", ".join(
+                format(value, ".17g") for value in operation.parameters
+            )
+            if execution_mode and operation.name in ("sdg", "tdg"):
+                # pyQPanda 3.8.5 只接受 DAGGER 块，不识别 SDAG/TDAG 门名。
+                lines.extend(("DAGGER", "%s %s" % (origin_name[0], operands), "ENDDAGGER"))
+            elif execution_mode and operation.parameters:
+                # SDK 要求参数位于操作数之后，且 CU1 的原生等价门名是 CR。
+                sdk_name = "CR" if operation.name == "cu1" else origin_name
+                lines.append("%s %s,(%s)" % (sdk_name, operands, parameter_values))
+            else:
+                parameters = "(%s)" % parameter_values if parameter_values else ""
+                lines.append("%s%s %s" % (origin_name, parameters, operands))
         elif isinstance(operation, MeasureOperation):
             pair_count = _measurement_count(operation)
             if pair_count:
