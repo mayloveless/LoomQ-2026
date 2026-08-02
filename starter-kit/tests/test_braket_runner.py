@@ -113,6 +113,7 @@ class BraketRunnerTests(unittest.TestCase):
         self.assertEqual({"00": 1, "11": 1}, result["counts"])
         LocalSimulator.assert_called_once_with("braket_sv")
         self.assertIn("OPENQASM 3.0;", Program.call_args.kwargs["source"])
+        self.assertNotIn('include "stdgates.inc";', Program.call_args.kwargs["source"])
         device.run.assert_called_once_with(Program.return_value, shots=2)
 
     def test_missing_sdk_has_clear_message(self) -> None:

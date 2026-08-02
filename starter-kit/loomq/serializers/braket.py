@@ -19,9 +19,14 @@ def _classical_bit(reference: ClassicalBitRef) -> str:
     return "%s[%d]" % (reference.register, reference.index)
 
 
-def serialize_braket(circuit: Circuit) -> str:
-    """Return a complete Braket OpenQASM 3 program."""
-    lines: List[str] = ['OPENQASM 3.0;', 'include "stdgates.inc";']
+def serialize_braket(circuit: Circuit, *, include_stdgates: bool = True) -> str:
+    """Return a complete Braket OpenQASM 3 program.
+
+    ``transpile()`` 的目标 IR 默认保留 stdgates 声明；本地模拟器提交时可关闭。
+    """
+    lines: List[str] = ["OPENQASM 3.0;"]
+    if include_stdgates:
+        lines.append('include "stdgates.inc";')
     lines.extend(
         "qubit[%d] %s;" % (register.size, register.name)
         for register in circuit.quantum_registers

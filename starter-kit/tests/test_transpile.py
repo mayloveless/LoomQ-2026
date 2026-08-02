@@ -43,6 +43,19 @@ class SerializerTests(unittest.TestCase):
         }
         self.assertTrue(expected_lines.issubset(set(output.splitlines())))
 
+    def test_braket_can_omit_stdgates_without_changing_program_body(self) -> None:
+        circuit = parse_qasm(CUSTOM_QASM)
+        default_output = serialize_braket(circuit)
+        local_simulator_output = serialize_braket(circuit, include_stdgates=False)
+
+        self.assertIn('include "stdgates.inc";', default_output)
+        self.assertNotIn('include "stdgates.inc";', local_simulator_output)
+        # 除 include 外，寄存器、门和测量语句必须保持完全一致。
+        self.assertEqual(
+            [line for line in default_output.splitlines() if "stdgates.inc" not in line],
+            local_simulator_output.splitlines(),
+        )
+
     def test_braket_single_bit_measurement(self) -> None:
         circuit = parse_qasm(
             "OPENQASM 2.0; qreg q[1]; creg c[1]; measure q[0] -> c[0];"
@@ -58,6 +71,7 @@ class AdapterTests(unittest.TestCase):
 
         self.assertTrue(spinq.startswith("OPENQASM 2.0;"))
         self.assertTrue(braket.startswith("OPENQASM 3.0;"))
+        self.assertIn('include "stdgates.inc";', braket)
         self.assertIn("cnot data[0], data[1];", braket)
 
     def test_unsupported_target_is_rejected(self) -> None:

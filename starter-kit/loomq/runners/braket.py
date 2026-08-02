@@ -124,7 +124,8 @@ def run_braket(circuit: Circuit, shots: int) -> Dict[str, Any]:
     """在 Braket braket_sv 本地模拟器执行 Circuit。"""
     validate_shots(shots)
     LocalSimulator, Program = _load_braket_sdk()
-    qasm3 = serialize_braket(circuit)
+    # 本地模拟器会将 stdgates.inc 视作本地文件，提交时不输出该声明。
+    qasm3 = serialize_braket(circuit, include_stdgates=False)
     device = LocalSimulator("braket_sv")
     program = Program(source=qasm3)
     task = device.run(program, shots=shots)
