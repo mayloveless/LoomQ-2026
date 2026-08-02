@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterator, List, Match, Optional, Tuple
 
 from .errors import QASMParseError, QASMSemanticError, UnsupportedGateError
+from .expressions import ParameterExpressionError, parse_angle_expression
 from .ir import (
     Circuit,
     ClassicalBitRef,
@@ -31,10 +32,7 @@ _REGISTER_RE = re.compile(
 _MEASURE_RE = re.compile(
     r"^measure\s+(?P<quantum>.+?)\s*->\s*(?P<classical>.+)$", re.IGNORECASE
 )
-_GATE_RE = re.compile(
-    r"^(?P<name>%s)(?:\s*\((?P<parameters>[^)]*)\))?\s+(?P<operands>.+)$"
-    % _IDENTIFIER
-)
+_GATE_NAME_RE = re.compile(r"^(?P<name>%s)" % _IDENTIFIER)
 
 
 @dataclass(frozen=True)
@@ -43,12 +41,114 @@ class GateSpec:
     parameter_count: int = 0
 
 
-# Adding another supported gate only requires extending this table and, for
-# parameterized gates, the numeric parameter parser below.
+# 门规格保持数据驱动，Runner 是否支持某门由各后端单独决定。
 SUPPORTED_GATES: Dict[str, GateSpec] = {
     "h": GateSpec(qubit_count=1),
+    "x": GateSpec(qubit_count=1),
+    "s": GateSpec(qubit_count=1),
+    "sdg": GateSpec(qubit_count=1),
+    "t": GateSpec(qubit_count=1),
+    "tdg": GateSpec(qubit_count=1),
+    "ry": GateSpec(qubit_count=1, parameter_count=1),
+    "rz": GateSpec(qubit_count=1, parameter_count=1),
     "cx": GateSpec(qubit_count=2),
+    "cu1": GateSpec(qubit_count=2, parameter_count=1),
+    "swap": GateSpec(qubit_count=2),
+    "ccx": GateSpec(qubit_count=3),
 }
+
+
+@dataclass(frozen=True)
+class GateStatement:
+    name: str
+    parameter_text: Optional[str]
+    operand_text: str
+
+
+def _split_top_level_commas(
+    text: str, *, line: int, statement: str
+) -> List[str]:
+    if not text.strip():
+        return []
+    items: List[str] = []
+    start = 0
+    depth = 0
+    for index, character in enumerate(text):
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+            if depth < 0:
+                raise QASMParseError(
+                    "unbalanced parentheses in gate parameters",
+                    line=line,
+                    statement=statement,
+                )
+        elif character == "," and depth == 0:
+            items.append(text[start:index].strip())
+            start = index + 1
+    if depth != 0:
+        raise QASMParseError(
+            "unbalanced parentheses in gate parameters",
+            line=line,
+            statement=statement,
+        )
+    items.append(text[start:].strip())
+    return items
+
+
+def _split_gate_statement(statement: str, line: int) -> Optional[GateStatement]:
+    name_match = _GATE_NAME_RE.match(statement)
+    if name_match is None:
+        return None
+    name = name_match.group("name")
+    cursor = name_match.end()
+    name_end = cursor
+    while cursor < len(statement) and statement[cursor].isspace():
+        cursor += 1
+
+    parameter_text: Optional[str] = None
+    if cursor < len(statement) and statement[cursor] == "(":
+        start = cursor + 1
+        depth = 1
+        cursor += 1
+        while cursor < len(statement) and depth:
+            if statement[cursor] == "(":
+                depth += 1
+            elif statement[cursor] == ")":
+                depth -= 1
+            cursor += 1
+        if depth:
+            raise QASMParseError(
+                "unbalanced parentheses in gate parameters",
+                line=line,
+                statement=statement,
+            )
+        parameter_text = statement[start : cursor - 1]
+        if cursor >= len(statement) or not statement[cursor].isspace():
+            raise QASMParseError(
+                "expected qubit operands after gate parameters",
+                line=line,
+                statement=statement,
+            )
+    elif cursor == name_end:
+        raise QASMParseError(
+            "expected qubit operands after gate name",
+            line=line,
+            statement=statement,
+        )
+    operand_text = statement[cursor:].strip()
+    if not operand_text:
+        raise QASMParseError(
+            "expected qubit operands after gate name",
+            line=line,
+            statement=statement,
+        )
+    return GateStatement(
+        name=name,
+        parameter_text=parameter_text,
+        operand_text=operand_text,
+    )
 
 
 def _statements(source: str) -> Iterator[Tuple[str, int]]:
@@ -224,30 +324,34 @@ def _parse_measurement(
 
 
 def _parse_gate(
-    match: Match[str],
+    gate: GateStatement,
     quantum_registers: Dict[str, QuantumRegister],
     *,
     line: int,
     statement: str,
 ) -> GateOperation:
-    name = match.group("name").lower()
+    name = gate.name.lower()
     spec = SUPPORTED_GATES.get(name)
     if spec is None:
         raise UnsupportedGateError(
             "unsupported quantum gate '%s'" % name, line=line, statement=statement
         )
 
-    parameter_text = match.group("parameters")
+    parameter_text = gate.parameter_text
     parameters: Tuple[float, ...] = ()
     if parameter_text is not None:
-        raw_parameters = [value.strip() for value in parameter_text.split(",")]
-        if raw_parameters == [""]:
-            raw_parameters = []
+        raw_parameters = _split_top_level_commas(
+            parameter_text, line=line, statement=statement
+        )
         try:
-            parameters = tuple(float(value) for value in raw_parameters)
-        except ValueError as exc:
+            parameters = tuple(
+                parse_angle_expression(value) for value in raw_parameters
+            )
+        except ParameterExpressionError as exc:
             raise QASMParseError(
-                "gate parameters must be numeric", line=line, statement=statement
+                "invalid parameter expression: %s" % exc,
+                line=line,
+                statement=statement,
             ) from exc
     if len(parameters) != spec.parameter_count:
         raise QASMParseError(
@@ -257,7 +361,7 @@ def _parse_gate(
             statement=statement,
         )
 
-    operands = [operand.strip() for operand in match.group("operands").split(",")]
+    operands = [operand.strip() for operand in gate.operand_text.split(",")]
     if len(operands) != spec.qubit_count or any(not value for value in operands):
         raise QASMParseError(
             "gate '%s' expects %d qubit operand(s), got %d"
@@ -361,11 +465,11 @@ def parse_qasm(source: str) -> Circuit:
             continue
 
 
-        gate_match = _GATE_RE.fullmatch(statement)
-        if gate_match is not None:
+        gate_statement = _split_gate_statement(statement, line)
+        if gate_statement is not None:
             operations.append(
                 _parse_gate(
-                    gate_match,
+                    gate_statement,
                     quantum_registers,
                     line=line,
                     statement=statement,

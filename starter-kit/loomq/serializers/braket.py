@@ -11,6 +11,10 @@ from ..ir import (
 )
 
 
+# OpenQASM 3 stdgates 使用 cnot 和 cp 表达 QASM 2 的 cx 与 cu1。
+_GATE_NAMES = {"cx": "cnot", "cu1": "cp"}
+
+
 def _qubit(reference: QubitRef) -> str:
     return "%s[%d]" % (reference.register, reference.index)
 
@@ -38,7 +42,7 @@ def serialize_braket(circuit: Circuit, *, include_stdgates: bool = True) -> str:
 
     for operation in circuit.operations:
         if isinstance(operation, GateOperation):
-            gate_name = "cnot" if operation.name == "cx" else operation.name
+            gate_name = _GATE_NAMES.get(operation.name, operation.name)
             parameters = ""
             if operation.parameters:
                 parameters = "(%s)" % ", ".join(

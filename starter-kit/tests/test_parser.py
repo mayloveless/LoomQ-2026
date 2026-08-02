@@ -1,14 +1,30 @@
 """Tests for OpenQASM parsing and semantic validation."""
 
 import unittest
+import math
 from pathlib import Path
 
-from loomq.errors import QASMSemanticError, UnsupportedGateError
+from loomq.errors import QASMParseError, QASMSemanticError, UnsupportedGateError
 from loomq.ir import GateOperation, MeasureOperation, QubitRef
 from loomq.parser import parse_qasm
 
 
 STARTER_KIT = Path(__file__).resolve().parents[1]
+
+GATE_SPECS = {
+    "h": (0, 1),
+    "x": (0, 1),
+    "s": (0, 1),
+    "sdg": (0, 1),
+    "t": (0, 1),
+    "tdg": (0, 1),
+    "ry": (1, 1),
+    "rz": (1, 1),
+    "cx": (0, 2),
+    "cu1": (1, 2),
+    "swap": (0, 2),
+    "ccx": (0, 3),
+}
 
 
 class ParserTests(unittest.TestCase):
@@ -78,8 +94,70 @@ class ParserTests(unittest.TestCase):
             )
 
     def test_unsupported_gate_is_rejected(self) -> None:
-        with self.assertRaisesRegex(UnsupportedGateError, "unsupported quantum gate 'x'"):
-            parse_qasm("OPENQASM 2.0; qreg q[1]; x q[0];")
+        with self.assertRaisesRegex(UnsupportedGateError, "unsupported quantum gate 'y'"):
+            parse_qasm("OPENQASM 2.0; qreg q[1]; y q[0];")
+
+    def test_all_twelve_whitelisted_gates_parse(self) -> None:
+        source = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+h q[0];
+x q[0];
+s q[0];
+sdg q[0];
+t q[0];
+tdg q[0];
+ry(pi/2) q[0];
+rz(-pi/4) q[1];
+cx q[0], q[1];
+cu1(3*pi/8) q[0], q[1];
+swap q[0], q[1];
+ccx q[0], q[1], q[2];
+"""
+
+        gates = parse_qasm(source).operations
+
+        self.assertEqual(list(GATE_SPECS), [gate.name for gate in gates])
+        self.assertAlmostEqual(math.pi / 2, gates[6].parameters[0])
+        self.assertAlmostEqual(-math.pi / 4, gates[7].parameters[0])
+        self.assertAlmostEqual(3 * math.pi / 8, gates[9].parameters[0])
+
+    def test_every_gate_rejects_wrong_parameter_count(self) -> None:
+        for name, (parameter_count, qubit_count) in GATE_SPECS.items():
+            parameters = "" if parameter_count else "(pi)"
+            operands = ", ".join("q[%d]" % index for index in range(qubit_count))
+            with self.subTest(gate=name):
+                with self.assertRaisesRegex(QASMParseError, "expects .* parameter"):
+                    parse_qasm(
+                        "OPENQASM 2.0; qreg q[3]; %s%s %s;"
+                        % (name, parameters, operands)
+                    )
+
+    def test_every_gate_rejects_wrong_qubit_count(self) -> None:
+        for name, (parameter_count, qubit_count) in GATE_SPECS.items():
+            parameters = "(pi)" if parameter_count else ""
+            wrong_count = 2 if qubit_count == 1 else qubit_count - 1
+            operands = ", ".join("q[%d]" % index for index in range(wrong_count))
+            with self.subTest(gate=name):
+                with self.assertRaisesRegex(QASMParseError, "expects .* qubit"):
+                    parse_qasm(
+                        "OPENQASM 2.0; qreg q[3]; %s%s %s;"
+                        % (name, parameters, operands)
+                    )
+
+    def test_nested_parameter_expression_does_not_break_operands(self) -> None:
+        circuit = parse_qasm(
+            "OPENQASM 2.0; qreg q[1]; ry((pi + pi/2) / 3) q[0];"
+        )
+
+        self.assertAlmostEqual(math.pi / 2, circuit.operations[0].parameters[0])
+        self.assertEqual((QubitRef("q", 0),), circuit.operations[0].qubits)
+
+    def test_invalid_parameter_expression_reports_line_and_statement(self) -> None:
+        with self.assertRaisesRegex(
+            QASMParseError, r"line 3: invalid parameter expression.*ry\(theta\) q\[0\]"
+        ):
+            parse_qasm("OPENQASM 2.0;\nqreg q[1];\nry(theta) q[0];")
 
 
 if __name__ == "__main__":

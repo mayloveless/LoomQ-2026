@@ -1,5 +1,6 @@
 """Tests for target serializers and adapter routing."""
 
+import math
 import unittest
 
 import adapter
@@ -14,6 +15,25 @@ creg result[2];
 h data[0];
 cx data[0], data[1];
 measure data -> result;
+"""
+
+FULL_GATE_QASM = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[3];
+creg c[3];
+h q[0];
+x q[0];
+s q[0];
+sdg q[0];
+t q[0];
+tdg q[0];
+ry(pi/2) q[0];
+rz(-pi/4) q[1];
+cx q[0], q[1];
+cu1(pi/8) q[0], q[1];
+swap q[0], q[1];
+ccx q[0], q[1], q[2];
+measure q -> c;
 """
 
 
@@ -62,6 +82,37 @@ class SerializerTests(unittest.TestCase):
         )
 
         self.assertIn("c[0] = measure q[0];", serialize_braket(circuit))
+
+    def test_spinq_all_gates_round_trip_to_equal_ir(self) -> None:
+        circuit = parse_qasm(FULL_GATE_QASM)
+        output = serialize_spinq(circuit)
+
+        self.assertEqual(circuit, parse_qasm(output))
+        self.assertIn("cu1(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), output)
+        self.assertIn("ccx q[0], q[1], q[2];", output)
+
+    def test_braket_maps_controlled_gate_names(self) -> None:
+        output = serialize_braket(parse_qasm(FULL_GATE_QASM))
+
+        self.assertIn("cnot q[0], q[1];", output)
+        self.assertIn("cp(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), output)
+        self.assertNotIn("cu1(", output)
+
+    def test_braket_preserves_other_gate_names_and_parameters(self) -> None:
+        output = serialize_braket(parse_qasm(FULL_GATE_QASM))
+        lines = set(output.splitlines())
+
+        self.assertIn("ry(%s) q[0];" % format(math.pi / 2, ".17g"), lines)
+        self.assertIn("rz(%s) q[1];" % format(-math.pi / 4, ".17g"), lines)
+        self.assertIn("swap q[0], q[1];", lines)
+        self.assertIn("ccx q[0], q[1], q[2];", lines)
+
+    def test_adapter_transpiles_full_gate_circuit(self) -> None:
+        spinq = adapter.transpile(FULL_GATE_QASM, "spinq")
+        braket = adapter.transpile(FULL_GATE_QASM, "braket")
+
+        self.assertEqual(parse_qasm(FULL_GATE_QASM), parse_qasm(spinq))
+        self.assertIn("cp(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), braket)
 
 
 class AdapterTests(unittest.TestCase):
