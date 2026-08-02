@@ -5,7 +5,7 @@ import unittest
 
 import adapter
 from loomq.parser import parse_qasm
-from loomq.serializers import serialize_braket, serialize_spinq
+from loomq.serializers import serialize_braket, serialize_originq, serialize_spinq
 
 
 CUSTOM_QASM = """OPENQASM 2.0;
@@ -136,9 +136,13 @@ class AdapterTests(unittest.TestCase):
         self.assertIn('include "stdgates.inc";', braket)
         self.assertIn("cnot data[0], data[1];", braket)
 
+    def test_originq_target_is_supported(self) -> None:
+        self.assertTrue(serialize_originq(parse_qasm(CUSTOM_QASM)).startswith("QINIT 2"))
+        self.assertTrue(adapter.transpile(CUSTOM_QASM, "originq").startswith("QINIT 2"))
+
     def test_unsupported_target_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported transpile target"):
-            adapter.transpile(CUSTOM_QASM, "originq")
+            adapter.transpile(CUSTOM_QASM, "unknown")
 
     def test_non_string_target_is_rejected_cleanly(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported transpile target"):

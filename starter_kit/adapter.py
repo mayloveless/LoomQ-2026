@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 from loomq.parser import parse_qasm
 from loomq.runners import run_braket, run_spinq
-from loomq.serializers import serialize_braket, serialize_spinq
+from loomq.serializers import serialize_braket, serialize_originq, serialize_spinq
 
 
 SUPPORTED_TARGETS = ("spinq", "originq", "braket")
@@ -19,6 +19,7 @@ def transpile(qasm_str: str, target: str) -> str:
     """Translate OpenQASM 2.0 into the target backend's native representation."""
     serializers = {
         "spinq": serialize_spinq,
+        "originq": serialize_originq,
         "braket": serialize_braket,
     }
     try:
