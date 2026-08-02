@@ -151,11 +151,12 @@ class AdapterRunTests(unittest.TestCase):
 class BraketIntegrationTests(unittest.TestCase):
     def run_public_circuit(self, name: str, expected: dict) -> None:
         source = (STARTER_KIT / "circuits" / name).read_text(encoding="utf-8")
-        result = adapter.run(source, "braket", 512)
+        # 真实采样使用较高 shots，避免 0.97 保真度断言受随机波动影响。
+        result = adapter.run(source, "braket", 4096)
         valid, reason = validate_schema(result)
 
         self.assertTrue(valid, reason)
-        self.assertEqual(512, sum(result["counts"].values()))
+        self.assertEqual(4096, sum(result["counts"].values()))
         self.assertTrue(set(result["counts"]).issubset(expected))
         observed = {
             key: value / result["shots"] for key, value in result["counts"].items()

@@ -1,0 +1,7 @@
+# 本地依赖由 Dockerfile 安装，不能作为构建上下文复制到干净镜像。
+.venv/
+.venv-spinq/
+__pycache__/
+loomq/__pycache__/
+tests/__pycache__/
+report*.json

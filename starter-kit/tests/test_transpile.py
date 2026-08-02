@@ -107,6 +107,17 @@ class SerializerTests(unittest.TestCase):
         self.assertIn("swap q[0], q[1];", lines)
         self.assertIn("ccx q[0], q[1], q[2];", lines)
 
+    def test_braket_execution_mode_uses_local_simulator_compatible_gates(self) -> None:
+        output = serialize_braket(
+            parse_qasm(FULL_GATE_QASM), include_stdgates=False, execution_mode=True
+        )
+
+        self.assertNotIn("sdg ", output)
+        self.assertNotIn("tdg ", output)
+        self.assertNotIn("cp(", output)
+        self.assertNotIn("ccx ", output)
+        self.assertIn("cphaseshift(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), output)
+
     def test_adapter_transpiles_full_gate_circuit(self) -> None:
         spinq = adapter.transpile(FULL_GATE_QASM, "spinq")
         braket = adapter.transpile(FULL_GATE_QASM, "braket")
