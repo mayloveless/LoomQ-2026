@@ -8,7 +8,7 @@
 
 把要申报项目的方框改成 `[x]`，并填写对应内容：
 
-- [ ] L1 真机
+- [x] L1 真机
 - [ ] L2 交互体验
 - [x] 工程与产品化
 - [ ] 自定义量子 RISC-V Bonus
@@ -16,24 +16,19 @@
 
 ## L1 真机
 
-每个有效真机平台计 5 分，最多两个平台。模拟器不计真机分。每个平台复制并填写一次下面的信息：
-
 ```text
-平台名称：[填写]
-平台 job ID：[填写]
-运行时间：[填写，带时区]
-shots：[填写]
-实际执行的 QASM：[填写仓库内路径]
-平台返回的原始结果：[填写仓库内路径]
-任务页截图：[选填，填写仓库内路径]
-```
-
-建议把文件放进 `evidence/files/`，比如：
-
-```text
-evidence/files/spinq-circuit.qasm
-evidence/files/spinq-result.json
-evidence/files/spinq-screenshot.png
+平台名称：本源量子 · 本源悟空 180
+平台 job ID：B3EB4CAB2F650CE923DF39C10D8AC0E3
+运行时间：2026-08-04 22:53:17.193 至 2026-08-04 22:53:19.161（UTC+8）
+芯片运行时间：0.318 秒
+shots：1000
+量子比特数：2
+实际执行的 QASM：starter_kit/circuits/bell.qasm
+平台返回的原始结果：starter_kit/evidence/files/B3EB4CAB2F650CE923DF39C10D8AC0E3_probability.csv
+任务页截图：未提供（选填）
+线路服务：开启线路优化、开启映射
+真实量子比特：q[37]、q[47]
+结果摘要：00=0.483，01=0.048，10=0.025，11=0.444；Bell 相关结果 00+11=0.927
 ```
 
 工作人员会核对 job ID、运行时间、电路、shots 和原始结果。截图只能辅助说明，不能代替 job ID 和原始结果。
