@@ -29,12 +29,11 @@ RUN pip install --no-cache-dir \
        -r requirements.txt
 
 # SpinQit 与 Braket 依赖不同 ANTLR 版本，使用独立虚拟环境。
-# SpinQit 未区分 CPU/GPU 的 torch 依赖；评测只使用本地模拟器，固定官方 CPU wheel，避免拉取 CUDA/cuDNN/Triton。
+# SpinQit 未区分 CPU/GPU 的 torch 依赖；评测只使用本地模拟器，直接安装官方 CPU wheel，避免 CUDA/cuDNN/Triton 和额外索引解析问题。
 RUN python -m venv /opt/spinq-venv \
     && /opt/spinq-venv/bin/pip install --no-cache-dir \
        --timeout 300 --retries 10 \
-       --extra-index-url https://download.pytorch.org/whl/cpu \
-       "torch==2.13.0+cpu" \
+       "https://download-r2.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl" \
     && /opt/spinq-venv/bin/pip install --no-cache-dir \
        --timeout 300 --retries 10 \
        -r requirements-spinq.txt
