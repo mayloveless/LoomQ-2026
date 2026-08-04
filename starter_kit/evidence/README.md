@@ -16,6 +16,8 @@
 
 ## L1 真机
 
+### 平台一：本源量子
+
 ```text
 平台名称：本源量子 · 本源悟空 180
 平台 job ID：B3EB4CAB2F650CE923DF39C10D8AC0E3
@@ -29,6 +31,25 @@ shots：1000
 线路服务：开启线路优化、开启映射
 真实量子比特：q[37]、q[47]
 结果摘要：00=0.483，01=0.048，10=0.025，11=0.444；Bell 相关结果 00+11=0.927
+```
+
+### 平台二：量旋云
+
+```text
+平台名称：量旋云 · 2 比特核磁量子计算机
+平台 job ID：G-260804-0001
+运行状态：运行成功
+运行时间：2026-08-04 23:02:53 至 2026-08-04 23:04:25（UTC+8）
+shots：平台导出结果未提供离散 shots，仅提供归一化概率分布
+量子比特数：2
+实际执行的 QASM：starter_kit/evidence/files/G-260804-0001-circuit.qasm
+平台返回的原始结果：starter_kit/evidence/files/G-260804-0001-result.msgpack.b64
+平台结果解析：starter_kit/evidence/files/G-260804-0001-result.json
+任务页截图：未提交（选填）
+实验来源：云平台
+结果摘要：00=0.41767132，01=0.10037047，10=0.06926195，11=0.41269626；Bell 相关结果 00+11=0.83036758
+原始文件说明：平台导出的 49 字节 msgpack 以无损 Base64 保存；SHA-256 为 cb6348bcb42a845957b5700beab6e45959a68e08dfb32fb72c0de5e9507c159d
+解码命令：base64 -d starter_kit/evidence/files/G-260804-0001-result.msgpack.b64 > task_result_G-260804-0001.msgpack
 ```
 
 工作人员会核对 job ID、运行时间、电路、shots 和原始结果。截图只能辅助说明，不能代替 job ID 和原始结果。
