@@ -53,7 +53,7 @@ export LOOMQ_ORIGINQ_PYTHON=/path/to/originq-venv/bin/python
 python evaluator.py --level l1 --target spinq,originq,braket --json-out report.json
 ```
 
-`LOOMQ_SPINQ_PYTHON` 与 `LOOMQ_ORIGINQ_PYTHON` 分别指定 SpinQ 和 OriginQ Worker 的独立 Python 解释器；未设置时，Runner 使用当前解释器。
+`LOOMQ_SPINQ_PYTHON` 与 `LOOMQ_ORIGINQ_PYTHON` 分别指定 SpinQ 和 OriginQ Worker 的独立 Python 解释器。未设置时，Runner 会查找项目中的 `.venv-spinq`、`.venv-originq`，以及 Docker 中约定的 `/opt/...-venv` 路径；若仍未找到可用解释器，则明确报错。
 
 ## 已知限制
 
