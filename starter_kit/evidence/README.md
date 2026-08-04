@@ -27,6 +27,7 @@ shots：1000
 量子比特数：2
 实际执行的 QASM：starter_kit/circuits/bell.qasm
 平台返回的原始结果：starter_kit/evidence/files/B3EB4CAB2F650CE923DF39C10D8AC0E3_probability.csv
+平台结果解析：starter_kit/evidence/files/B3EB4CAB2F650CE923DF39C10D8AC0E3-result.json
 任务页截图：未提供（选填）
 线路服务：开启线路优化、开启映射
 真实量子比特：q[37]、q[47]
