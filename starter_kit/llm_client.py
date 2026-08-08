@@ -16,37 +16,37 @@ from typing import Any
 
 
 REQUIRED_ENV = ("LOOMQ_LLM_BASE_URL", "LOOMQ_LLM_API_KEY", "LOOMQ_LLM_MODEL")
+MAX_OUTPUT_TOKENS = 4096
 
 
-def _configuration() -> tuple[str, str, str, float, int]:
+def _configuration() -> tuple[str, str, str, float]:
     missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
     if missing:
         raise RuntimeError("missing required LoomQ L2 environment variable(s): " + ", ".join(missing))
     try:
         timeout = float(os.environ.get("LOOMQ_LLM_TIMEOUT_SECONDS", "120"))
-        max_output = int(os.environ.get("LOOMQ_LLM_MAX_OUTPUT_TOKENS", "4096"))
     except ValueError as exc:
         raise RuntimeError("invalid LoomQ L2 numeric environment variable") from exc
-    if timeout <= 0 or max_output <= 0:
-        raise RuntimeError("LoomQ L2 timeout and output-token limit must be positive")
+    if timeout <= 0:
+        raise RuntimeError("LoomQ L2 timeout must be positive")
     return (
         os.environ["LOOMQ_LLM_BASE_URL"].rstrip("/"),
         os.environ["LOOMQ_LLM_API_KEY"],
         os.environ["LOOMQ_LLM_MODEL"],
         timeout,
-        max_output,
     )
 
 
 def chat_completion(messages: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
     """Create one non-streaming chat completion using the public L2 contract."""
-    base_url, api_key, model, timeout, max_output = _configuration()
+    base_url, api_key, model, timeout = _configuration()
     payload = {
         "model": model,
         "messages": messages,
         "stream": False,
         "temperature": 0,
-        "max_tokens": max_output,
+        # 输出上限是传输默认值，不引入公开契约之外的配置来源。
+        "max_tokens": MAX_OUTPUT_TOKENS,
     }
     if model == "deepseek-v4-flash":
         payload["thinking"] = {"type": "disabled"}

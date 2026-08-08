@@ -8,6 +8,7 @@ the functions directly or delegate to another language/runtime with subprocess.
 from typing import Any, Dict, List, Tuple
 
 from loomq.parser import parse_qasm
+from loomq.l2_agent import agent_chat as _l2_agent_chat
 from loomq.runners import run_braket, run_originq, run_spinq
 from loomq.serializers import serialize_braket, serialize_originq, serialize_spinq
 
@@ -49,7 +50,7 @@ def run(qasm_str: str, target: str, shots: int) -> Dict[str, Any]:
 
 def agent_chat(prompt: str) -> str:
     """Optional L2 entry point using the documented LOOMQ_LLM_* environment."""
-    raise NotImplementedError("L2 is optional; implement agent_chat(prompt) to enter")
+    return _l2_agent_chat(prompt)
 
 
 def compile_hybrid(hybrid_qasm_str: str) -> Tuple[List[str], str]:

@@ -1,0 +1,110 @@
+"""Minimal L2 model-call pipeline for one-shot QASM generation."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import re
+from typing import Any, Mapping
+
+try:
+    # 支持从仓库根目录按 starter_kit 包导入。
+    from starter_kit import llm_client
+except ImportError:  # pragma: no cover - 由 starter_kit 评测根目录运行时使用
+    import llm_client  # type: ignore[no-redef]
+
+from .qasm_tools import extract_qasm, validate_qasm
+
+
+SYSTEM_PROMPT = """你是 LoomQ 的 OpenQASM 2.0 电路生成助手。
+只返回一个 JSON 对象，不要返回 JSON 之外的散文。对象格式为：
+{"task_type":"generate_qasm","qasm":"OPENQASM 2.0; ...","explanation":"简短说明"}
+qasm 必须是完整的 OpenQASM 2.0 程序，包含 include、qreg 和 creg 声明，并按用户要求测量。
+只可使用当前项目支持的门：h、x、s、sdg、t、tdg、ry、rz、cx、cu1、swap、ccx。
+请根据用户的实际要求生成电路，不要硬编码公开 GHZ 示例的固定答案。
+"""
+
+_JSON_FENCE_RE = re.compile(
+    r"^```json\s*\n(?P<body>.*?)\n```$", re.IGNORECASE | re.DOTALL
+)
+
+
+@dataclass(frozen=True)
+class GenerationResponse:
+    """Validated fields from the model's structured response."""
+
+    qasm: str
+    explanation: str
+
+
+def _response_content(response: Any) -> str:
+    """Read choices[0].message.content without echoing the raw response."""
+    if not isinstance(response, Mapping):
+        raise RuntimeError("L2 model response must be an object")
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError("L2 model response is missing choices")
+    first_choice = choices[0]
+    if not isinstance(first_choice, Mapping):
+        raise RuntimeError("L2 model response choice must be an object")
+    message = first_choice.get("message")
+    if not isinstance(message, Mapping):
+        raise RuntimeError("L2 model response is missing message")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("L2 model response content must be a non-empty string")
+    return content.strip()
+
+
+def parse_generation_response(response: Any) -> GenerationResponse:
+    """Parse and validate the one-shot JSON generation protocol."""
+    content = _response_content(response)
+    fence_match = _JSON_FENCE_RE.fullmatch(content)
+    if fence_match is not None:
+        content = fence_match.group("body").strip()
+
+    try:
+        payload = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        raise RuntimeError("L2 model response content is not valid JSON") from None
+    if not isinstance(payload, dict):
+        raise RuntimeError("L2 model response JSON must be an object")
+    if payload.get("task_type") != "generate_qasm":
+        raise RuntimeError("L2 model response task_type must be 'generate_qasm'")
+
+    qasm_text = payload.get("qasm")
+    if not isinstance(qasm_text, str) or not qasm_text.strip():
+        raise RuntimeError("L2 model response qasm must be a non-empty string")
+    explanation = payload.get("explanation", "")
+    if not isinstance(explanation, str):
+        raise RuntimeError("L2 model response explanation must be a string")
+    if "OPENQASM 2.0;" in explanation or "```" in explanation:
+        raise RuntimeError("L2 model response explanation must not contain code")
+
+    qasm = extract_qasm(qasm_text)
+    if qasm is None:
+        raise RuntimeError("L2 model response does not contain a complete OpenQASM 2.0 program")
+    validate_qasm(qasm)
+    return GenerationResponse(qasm=qasm, explanation=explanation.strip())
+
+
+def agent_chat(prompt: str) -> str:
+    """Call the configured model once and return one parser-validated QASM program."""
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise RuntimeError("L2 prompt must be a non-empty string")
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    try:
+        raw_response = llm_client.chat_completion(messages)
+    except Exception:
+        # 传输层或测试替身的异常可能包含凭证，因此统一改写并断开异常链。
+        raise RuntimeError("L2 model request failed") from None
+
+    generated = parse_generation_response(raw_response)
+    explanation = generated.explanation or "已生成并通过 OpenQASM 2.0 校验。"
+    return "%s\n\n```qasm\n%s\n```" % (explanation, generated.qasm)
+
+
+__all__ = ["GenerationResponse", "agent_chat", "parse_generation_response"]
