@@ -20,7 +20,7 @@ SYSTEM_PROMPT = """你是 LoomQ 的 OpenQASM 2.0 电路生成与修复助手。
 只返回一个 JSON 对象，不要返回 JSON 之外的散文。对象格式为：
 {"task_type":"generate_qasm 或 repair_qasm","qasm":"OPENQASM 2.0; ...","explanation":"简短说明"}
 请判断用户是在生成还是修复 QASM，并设置对应 task_type。
-qasm 必须是完整的 OpenQASM 2.0 程序，包含 include、qreg 和 creg 声明，并按用户要求测量。
+qasm 必须是完整的 OpenQASM 2.0 程序，包含 include 和 qreg；用户明确要求测量时还必须包含 creg 和测量语句。
 只可使用当前项目支持的门：h、x、s、sdg、t、tdg、ry、rz、cx、cu1、swap、ccx。
 修复时必须保持用户明确声明的目标态、目标功能和测量语义，不能只修正语法而改变电路目标。
 请根据用户的实际要求生成电路，不要硬编码公开 GHZ 示例的固定答案。
@@ -28,6 +28,20 @@ qasm 必须是完整的 OpenQASM 2.0 程序，包含 include、qreg 和 creg 声
 
 _JSON_FENCE_RE = re.compile(
     r"^```json\s*\n(?P<body>.*?)\n```$", re.IGNORECASE | re.DOTALL
+)
+_NEGATED_MEASUREMENT_RE = re.compile(
+    r"(?:不(?:需要|要|进行)?|无需(?:进行)?|省略|移除|删除)"
+    r"(?:添加|进行|保留)?(?:任何)?(?:测量|测定|读出|采样)"
+    r"|(?:without|no)\s+(?:any\s+)?(?:measurements?|measurement|measuring|readouts?|sampling)"
+    r"|(?:do\s+not|don't|omit|remove)\s+(?:add\s+|include\s+|perform\s+)?"
+    r"(?:any\s+)?(?:measurements?|measurement|measuring|readouts?|sampling)"
+    r"|measurement[- ]free|unmeasured",
+    re.IGNORECASE,
+)
+_MEASUREMENT_REQUEST_RE = re.compile(
+    r"测量|测定|读出|采样|measure(?:ment|ments|d|s|ing)?|read[ -]?outs?|"
+    r"sampl(?:e|es|ed|ing)|shots?|counts?",
+    re.IGNORECASE,
 )
 
 
@@ -103,13 +117,15 @@ def _parse_candidate_response(response: Any) -> _CandidateResponse:
     )
 
 
-def _validate_candidate(candidate: _CandidateResponse) -> GenerationResponse:
+def _validate_candidate(
+    candidate: _CandidateResponse, *, require_measurement: bool = False
+) -> GenerationResponse:
     qasm = extract_qasm(candidate.qasm)
     if qasm is None:
         raise QASMValidationError(
             "QASMExtractionError: response does not contain one unambiguous OpenQASM 2.0 program"
         )
-    validate_qasm(qasm)
+    validate_qasm(qasm, require_measurement=require_measurement)
     return GenerationResponse(
         task_type=candidate.task_type,
         qasm=qasm,
@@ -117,9 +133,14 @@ def _validate_candidate(candidate: _CandidateResponse) -> GenerationResponse:
     )
 
 
-def parse_generation_response(response: Any) -> GenerationResponse:
+def parse_generation_response(
+    response: Any, *, require_measurement: bool = False
+) -> GenerationResponse:
     """Parse the structured protocol and validate its QASM candidate."""
-    return _validate_candidate(_parse_candidate_response(response))
+    return _validate_candidate(
+        _parse_candidate_response(response),
+        require_measurement=require_measurement,
+    )
 
 
 def _call_model(messages: list[dict[str, str]]) -> Any:
@@ -130,17 +151,39 @@ def _call_model(messages: list[dict[str, str]]) -> Any:
         raise RuntimeError("L2 model request failed") from None
 
 
-def _repair_prompt(prompt: str, candidate: str, diagnostic: str) -> str:
+def _requires_measurement(prompt: str) -> bool:
+    """Conservatively detect an explicit measurement request, including QASM."""
+    # 先移除明确的否定表达，再识别剩余的测量、采样或 counts/shots 要求。
+    without_negations = _NEGATED_MEASUREMENT_RE.sub("", prompt)
+    return _MEASUREMENT_REQUEST_RE.search(without_negations) is not None
+
+
+def _repair_prompt(
+    prompt: str,
+    candidate: str,
+    diagnostic: str,
+    *,
+    require_measurement: bool,
+) -> str:
     """Build a bounded, explicit repair request with the original goal intact."""
+    if require_measurement:
+        measurement_instruction = (
+            "原始请求明确要求测量，因此必须包含 creg 和对应测量语句。"
+        )
+    else:
+        measurement_instruction = (
+            "原始请求未明确要求测量，不要仅因缺少 creg 或测量语句而改变目标态制备。"
+        )
     payload = {
         "instruction": (
             "修复候选 QASM。返回完整、可独立运行的 OpenQASM 2.0，包含 include、"
-            "qreg、creg 和用户要求的测量。必须保持原始用户请求中的目标态、目标功能"
-            "和测量语义。只返回约定 JSON，task_type 使用 repair_qasm。"
+            "qreg。%s必须保持原始用户请求中的目标态、目标功能和测量语义。"
+            "只返回约定 JSON，task_type 使用 repair_qasm。" % measurement_instruction
         ),
         "original_user_request": prompt,
         "candidate_qasm": candidate,
         "parser_error": diagnostic,
+        "require_measurement": require_measurement,
         "response_schema": {
             "task_type": "repair_qasm",
             "qasm": "OPENQASM 2.0; ...",
@@ -154,6 +197,7 @@ def agent_chat(prompt: str) -> str:
     """Return valid QASM, allowing exactly one repair call after QASM failure."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("L2 prompt must be a non-empty string")
+    require_measurement = _requires_measurement(prompt)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -161,7 +205,10 @@ def agent_chat(prompt: str) -> str:
     raw_response = _call_model(messages)
     candidate = _parse_candidate_response(raw_response)
     try:
-        generated = _validate_candidate(candidate)
+        generated = _validate_candidate(
+            candidate,
+            require_measurement=require_measurement,
+        )
     except QASMValidationError as first_error:
         repair_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -171,13 +218,17 @@ def agent_chat(prompt: str) -> str:
                     prompt,
                     candidate.qasm,
                     first_error.diagnostic,
+                    require_measurement=require_measurement,
                 ),
             },
         ]
         repair_response = _call_model(repair_messages)
         repaired_candidate = _parse_candidate_response(repair_response)
         try:
-            generated = _validate_candidate(repaired_candidate)
+            generated = _validate_candidate(
+                repaired_candidate,
+                require_measurement=require_measurement,
+            )
         except QASMValidationError:
             raise RuntimeError(
                 "model produced invalid QASM twice; repair limit reached"

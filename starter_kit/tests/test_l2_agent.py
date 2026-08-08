@@ -14,7 +14,7 @@ from loomq.ir import (
     QubitRef,
 )
 from loomq.parser import parse_qasm
-from loomq.qasm_tools import extract_qasm, validate_qasm
+from loomq.qasm_tools import QASMValidationError, extract_qasm, validate_qasm
 
 
 GHZ_QASM = """OPENQASM 2.0;
@@ -33,6 +33,12 @@ creg c[2];
 h q[0];
 cx q[0],q[1];
 measure q -> c;"""
+
+STATE_ONLY_BELL_QASM = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+h q[0];
+cx q[0],q[1];"""
 
 
 def completion(content):
@@ -147,6 +153,31 @@ class L2AgentTests(unittest.TestCase):
     def test_validate_qasm_uses_existing_parser_contract(self):
         self.assertIsNone(validate_qasm(GHZ_QASM))
 
+    def test_state_preparation_does_not_require_classical_register_or_measurement(self):
+        self.assertIsNone(validate_qasm(STATE_ONLY_BELL_QASM))
+        with self.assertRaisesRegex(QASMValidationError, "failed OpenQASM"):
+            validate_qasm(STATE_ONLY_BELL_QASM, require_measurement=True)
+
+    def test_quantum_register_is_always_required(self):
+        no_quantum_register = """OPENQASM 2.0;
+include "qelib1.inc";
+creg c[1];"""
+        with self.assertRaisesRegex(QASMValidationError, "failed OpenQASM"):
+            validate_qasm(no_quantum_register)
+
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_state_only_request_accepts_unmeasured_qasm_in_one_call(self, chat):
+        chat.return_value = completion(generation_json(qasm=STATE_ONLY_BELL_QASM))
+
+        reply = agent_chat("只制备 Bell 态")
+
+        chat.assert_called_once()
+        circuit = parse_qasm(reply_qasm(reply))
+        self.assertFalse(circuit.classical_registers)
+        self.assertFalse(
+            any(isinstance(operation, MeasureOperation) for operation in circuit.operations)
+        )
+
     def test_repair_task_type_is_supported(self):
         parsed = parse_generation_response(
             completion(generation_json(qasm=BELL_QASM, task_type="repair_qasm"))
@@ -199,6 +230,7 @@ class L2AgentTests(unittest.TestCase):
         self.assertEqual(
             repair_context["response_schema"]["task_type"], "repair_qasm"
         )
+        self.assertTrue(repair_context["require_measurement"])
 
     @mock.patch("loomq.l2_agent.llm_client.chat_completion")
     def test_generated_qasm_without_measurement_is_repaired(self, chat):
@@ -213,6 +245,8 @@ class L2AgentTests(unittest.TestCase):
         self.assertEqual(chat.call_count, 2)
         circuit = parse_qasm(reply_qasm(reply))
         self.assertIsInstance(circuit.operations[-1], MeasureOperation)
+        context = json.loads(chat.call_args_list[1].args[0][-1]["content"])
+        self.assertTrue(context["require_measurement"])
 
     @mock.patch("loomq.l2_agent.llm_client.chat_completion")
     def test_repair_prompt_uses_clean_bounded_parser_error(self, chat):

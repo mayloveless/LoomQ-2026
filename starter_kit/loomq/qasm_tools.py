@@ -73,8 +73,8 @@ def extract_qasm(text: str) -> str | None:
     return text[text.index(_QASM_HEADER) :].strip()
 
 
-def validate_qasm(qasm: str) -> None:
-    """Validate generated QASM and the L2 complete-measurement contract."""
+def validate_qasm(qasm: str, *, require_measurement: bool = False) -> None:
+    """Validate QASM and optionally enforce the L2 measurement contract."""
     try:
         circuit = parse_qasm(qasm)
     except (TypeError, ValueError) as exc:
@@ -83,10 +83,15 @@ def validate_qasm(qasm: str) -> None:
 
     if not circuit.quantum_registers:
         raise QASMValidationError("QASMValidationError: missing quantum register")
-    if not circuit.classical_registers:
-        raise QASMValidationError("QASMValidationError: missing classical register")
-    if not any(isinstance(operation, MeasureOperation) for operation in circuit.operations):
-        raise QASMValidationError("QASMValidationError: circuit has no measurement")
+    if require_measurement:
+        if not circuit.classical_registers:
+            raise QASMValidationError(
+                "QASMValidationError: measurement requires a classical register"
+            )
+        if not any(
+            isinstance(operation, MeasureOperation) for operation in circuit.operations
+        ):
+            raise QASMValidationError("QASMValidationError: circuit has no measurement")
 
 
 __all__ = ["QASMValidationError", "extract_qasm", "validate_qasm"]
