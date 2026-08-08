@@ -6,6 +6,13 @@ from unittest import mock
 
 import adapter
 from loomq.l2_agent import agent_chat, parse_generation_response
+from loomq.ir import (
+    ClassicalRegisterRef,
+    GateOperation,
+    MeasureOperation,
+    QuantumRegisterRef,
+    QubitRef,
+)
 from loomq.parser import parse_qasm
 from loomq.qasm_tools import extract_qasm, validate_qasm
 
@@ -19,20 +26,36 @@ cx q[0],q[1];
 cx q[1],q[2];
 measure q -> c;"""
 
+BELL_QASM = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+cx q[0],q[1];
+measure q -> c;"""
+
 
 def completion(content):
     return {"choices": [{"message": {"content": content}}]}
 
 
-def generation_json(qasm=GHZ_QASM, explanation="已生成三比特电路。"):
+def generation_json(
+    qasm=GHZ_QASM,
+    explanation="已生成三比特电路。",
+    task_type="generate_qasm",
+):
     return json.dumps(
         {
-            "task_type": "generate_qasm",
+            "task_type": task_type,
             "qasm": qasm,
             "explanation": explanation,
         },
         ensure_ascii=False,
     )
+
+
+def reply_qasm(reply):
+    return reply.split("```qasm\n", 1)[1].rsplit("\n```", 1)[0]
 
 
 class L2AgentTests(unittest.TestCase):
@@ -42,7 +65,7 @@ class L2AgentTests(unittest.TestCase):
 
         reply = adapter.agent_chat("生成一个三比特纠缠电路并测量")
 
-        extracted = extract_qasm(reply.split("```qasm\n", 1)[1].rsplit("\n```", 1)[0])
+        extracted = extract_qasm(reply_qasm(reply))
         self.assertIsNotNone(extracted)
         parse_qasm(extracted)
         chat.assert_called_once()
@@ -79,7 +102,7 @@ class L2AgentTests(unittest.TestCase):
             parse_generation_response(completion("{broken"))
 
     def test_missing_or_invalid_task_type_fails_stably(self):
-        for task_type in (None, "repair_qasm"):
+        for task_type in (None, "unsupported_task"):
             payload = {"qasm": GHZ_QASM}
             if task_type is not None:
                 payload["task_type"] = task_type
@@ -87,15 +110,18 @@ class L2AgentTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "task_type"):
                     parse_generation_response(completion(json.dumps(payload)))
 
-    def test_invalid_qasm_fails_without_second_model_call(self):
+    def test_two_invalid_qasm_candidates_stop_after_one_repair(self):
         invalid = GHZ_QASM.replace("h q[0];", "invalid q[0];")
         with mock.patch(
             "loomq.l2_agent.llm_client.chat_completion",
-            return_value=completion(generation_json(qasm=invalid)),
+            side_effect=[
+                completion(generation_json(qasm=invalid)),
+                completion(generation_json(qasm=invalid, task_type="repair_qasm")),
+            ],
         ) as chat:
-            with self.assertRaisesRegex(RuntimeError, "failed OpenQASM"):
+            with self.assertRaisesRegex(RuntimeError, "repair limit reached"):
                 agent_chat("生成电路")
-        chat.assert_called_once()
+        self.assertEqual(chat.call_count, 2)
 
     def test_transport_exception_does_not_expose_key(self):
         test_key = "test-secret-api-key"
@@ -120,6 +146,118 @@ class L2AgentTests(unittest.TestCase):
 
     def test_validate_qasm_uses_existing_parser_contract(self):
         self.assertIsNone(validate_qasm(GHZ_QASM))
+
+    def test_repair_task_type_is_supported(self):
+        parsed = parse_generation_response(
+            completion(generation_json(qasm=BELL_QASM, task_type="repair_qasm"))
+        )
+        self.assertEqual(parsed.task_type, "repair_qasm")
+
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_bell_repair_calls_twice_and_preserves_target_structure(self, chat):
+        broken_bell = BELL_QASM.replace("h q[0];", "h q[0]")
+        chat.side_effect = [
+            completion(
+                generation_json(
+                    qasm=broken_bell,
+                    task_type="repair_qasm",
+                    explanation="发现待修复电路。",
+                )
+            ),
+            completion(
+                generation_json(
+                    qasm=BELL_QASM,
+                    task_type="repair_qasm",
+                    explanation="已修复 Bell 电路。",
+                )
+            ),
+        ]
+
+        reply = agent_chat("修复以下程序，保持 Bell 态并全测量")
+
+        self.assertEqual(chat.call_count, 2)
+        circuit = parse_qasm(reply_qasm(reply))
+        self.assertEqual(
+            circuit.operations,
+            (
+                GateOperation("h", (QubitRef("q", 0),)),
+                GateOperation("cx", (QubitRef("q", 0), QubitRef("q", 1))),
+                MeasureOperation(
+                    QuantumRegisterRef("q"),
+                    ClassicalRegisterRef("c"),
+                ),
+            ),
+        )
+
+        repair_context = json.loads(chat.call_args_list[1].args[0][-1]["content"])
+        self.assertEqual(
+            repair_context["original_user_request"],
+            "修复以下程序，保持 Bell 态并全测量",
+        )
+        self.assertEqual(repair_context["candidate_qasm"], broken_bell)
+        self.assertIn("保持原始用户请求", repair_context["instruction"])
+        self.assertEqual(
+            repair_context["response_schema"]["task_type"], "repair_qasm"
+        )
+
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_generated_qasm_without_measurement_is_repaired(self, chat):
+        no_measurement = GHZ_QASM.replace("measure q -> c;", "")
+        chat.side_effect = [
+            completion(generation_json(qasm=no_measurement)),
+            completion(generation_json(qasm=GHZ_QASM, task_type="repair_qasm")),
+        ]
+
+        reply = agent_chat("生成三比特 GHZ 态并全测量")
+
+        self.assertEqual(chat.call_count, 2)
+        circuit = parse_qasm(reply_qasm(reply))
+        self.assertIsInstance(circuit.operations[-1], MeasureOperation)
+
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_repair_prompt_uses_clean_bounded_parser_error(self, chat):
+        broken = BELL_QASM.replace(
+            'include "qelib1.inc";',
+            'include "/Users/tester/private/secret.inc";',
+        )
+        chat.side_effect = [
+            completion(generation_json(qasm=broken, task_type="repair_qasm")),
+            completion(generation_json(qasm=BELL_QASM, task_type="repair_qasm")),
+        ]
+
+        agent_chat("修复 Bell 电路")
+
+        context = json.loads(chat.call_args_list[1].args[0][-1]["content"])
+        self.assertIn("/Users/tester/private/secret.inc", context["candidate_qasm"])
+        self.assertNotIn("/Users", context["parser_error"])
+        self.assertNotIn("Traceback", context["parser_error"])
+        self.assertNotIn("LOOMQ_", context["parser_error"])
+        self.assertLessEqual(len(context["parser_error"]), 400)
+
+    def test_fenced_qasm_with_surrounding_explanation_is_extracted(self):
+        text = "这是修复结果：\n```\n%s\n```\n已保持测量语义。" % BELL_QASM
+        self.assertEqual(extract_qasm(text), BELL_QASM)
+
+    def test_conflicting_multiple_qasm_programs_are_rejected(self):
+        text = "```qasm\n%s\n```\n```openqasm\n%s\n```" % (
+            BELL_QASM,
+            GHZ_QASM,
+        )
+        self.assertIsNone(extract_qasm(text))
+
+    def test_final_double_failure_does_not_expose_test_key(self):
+        test_key = "repair-test-secret-key"
+        invalid = BELL_QASM.replace("h q[0];", "unknown_%s q[0];" % test_key)
+        responses = [
+            completion(generation_json(qasm=invalid)),
+            completion(generation_json(qasm=invalid, task_type="repair_qasm")),
+        ]
+        with mock.patch(
+            "loomq.l2_agent.llm_client.chat_completion", side_effect=responses
+        ):
+            with self.assertRaisesRegex(RuntimeError, "repair limit reached") as caught:
+                agent_chat("生成 Bell 电路")
+        self.assertNotIn(test_key, str(caught.exception))
 
 
 if __name__ == "__main__":
