@@ -13,17 +13,21 @@ try:
 except ImportError:  # pragma: no cover - 由 starter_kit 评测根目录运行时使用
     import llm_client  # type: ignore[no-redef]
 
+from .backend_selector import BackendConstraints, select_backends
 from .qasm_tools import QASMValidationError, extract_qasm, validate_qasm
 
 
-SYSTEM_PROMPT = """你是 LoomQ 的 OpenQASM 2.0 电路生成与修复助手。
-只返回一个 JSON 对象，不要返回 JSON 之外的散文。对象格式为：
+SYSTEM_PROMPT = """你是 LoomQ 的量子任务约束提取与 OpenQASM 2.0 助手。
+只返回一个 JSON 对象，不要返回 JSON 之外的散文。生成或修复 QASM 时返回：
 {"task_type":"generate_qasm 或 repair_qasm","qasm":"OPENQASM 2.0; ...","explanation":"简短说明"}
 请判断用户是在生成还是修复 QASM，并设置对应 task_type。
 qasm 必须是完整的 OpenQASM 2.0 程序，包含 include 和 qreg；用户明确要求测量时还必须包含 creg 和测量语句。
 只可使用当前项目支持的门：h、x、s、sdg、t、tdg、ry、rz、cx、cu1、swap、ccx。
 修复时必须保持用户明确声明的目标态、目标功能和测量语义，不能只修正语法而改变电路目标。
 请根据用户的实际要求生成电路，不要硬编码公开 GHZ 示例的固定答案。
+选择后端时只提取用户约束，不要推荐或输出 backend ID，并返回：
+{"task_type":"select_backend","qasm":null,"backend_constraints":{"min_qubits":null,"require_qpu":null,"require_no_queue":false,"cost_policy":"free_only 或 free_or_quota 或 paid_allowed 或 unspecified","allow_account_required":null},"explanation":"简短说明"}
+未声明的约束使用 null、false 或 unspecified，不要擅自收紧。
 """
 
 _JSON_FENCE_RE = re.compile(
@@ -82,8 +86,8 @@ def _response_content(response: Any) -> str:
     return content.strip()
 
 
-def _parse_candidate_response(response: Any) -> _CandidateResponse:
-    """Parse the JSON protocol without treating broken QASM as broken JSON."""
+def _parse_response_payload(response: Any) -> dict[str, Any]:
+    """Parse the shared JSON envelope without interpreting the task payload."""
     content = _response_content(response)
     fence_match = _JSON_FENCE_RE.fullmatch(content)
     if fence_match is not None:
@@ -95,26 +99,75 @@ def _parse_candidate_response(response: Any) -> _CandidateResponse:
         raise RuntimeError("L2 model response content is not valid JSON") from None
     if not isinstance(payload, dict):
         raise RuntimeError("L2 model response JSON must be an object")
-    task_type = payload.get("task_type")
-    if task_type not in ("generate_qasm", "repair_qasm"):
-        raise RuntimeError(
-            "L2 model response task_type must be 'generate_qasm' or 'repair_qasm'"
-        )
+    return payload
 
-    qasm_text = payload.get("qasm")
-    if not isinstance(qasm_text, str) or not qasm_text.strip():
-        raise RuntimeError("L2 model response qasm must be a non-empty string")
+
+def _parse_explanation(payload: Mapping[str, Any]) -> str:
     explanation = payload.get("explanation", "")
     if not isinstance(explanation, str):
         raise RuntimeError("L2 model response explanation must be a string")
     if "OPENQASM 2.0;" in explanation or "```" in explanation:
         raise RuntimeError("L2 model response explanation must not contain code")
+    return explanation.strip()
 
+
+def _parse_candidate_payload(payload: Mapping[str, Any]) -> _CandidateResponse:
+    """Parse QASM fields without treating broken QASM as broken JSON."""
+    task_type = payload.get("task_type")
+    if task_type not in ("generate_qasm", "repair_qasm"):
+        raise RuntimeError(
+            "L2 model response task_type must be 'generate_qasm', 'repair_qasm', or 'select_backend'"
+        )
+
+    qasm_text = payload.get("qasm")
+    if not isinstance(qasm_text, str) or not qasm_text.strip():
+        raise RuntimeError("L2 model response qasm must be a non-empty string")
     return _CandidateResponse(
         task_type=task_type,
         qasm=qasm_text,
-        explanation=explanation.strip(),
+        explanation=_parse_explanation(payload),
     )
+
+
+def _parse_candidate_response(response: Any) -> _CandidateResponse:
+    return _parse_candidate_payload(_parse_response_payload(response))
+
+
+def _parse_backend_constraints(payload: Mapping[str, Any]) -> BackendConstraints:
+    if payload.get("task_type") != "select_backend":
+        raise RuntimeError("L2 model response task_type must be 'select_backend'")
+    if "qasm" not in payload or payload["qasm"] is not None:
+        raise RuntimeError("L2 backend-selection response qasm must be null")
+    raw_constraints = payload.get("backend_constraints")
+    if not isinstance(raw_constraints, Mapping):
+        raise RuntimeError(
+            "L2 backend-selection response backend_constraints must be an object"
+        )
+    required_fields = {
+        "min_qubits",
+        "require_qpu",
+        "require_no_queue",
+        "cost_policy",
+        "allow_account_required",
+    }
+    missing = sorted(required_fields.difference(raw_constraints))
+    if missing:
+        raise RuntimeError(
+            "L2 backend-selection constraints are missing field(s): %s"
+            % ", ".join(missing)
+        )
+    try:
+        return BackendConstraints(
+            min_qubits=raw_constraints["min_qubits"],
+            require_qpu=raw_constraints["require_qpu"],
+            require_no_queue=raw_constraints["require_no_queue"],
+            cost_policy=raw_constraints["cost_policy"],
+            allow_account_required=raw_constraints["allow_account_required"],
+        )
+    except ValueError as exc:
+        raise RuntimeError(
+            "L2 backend-selection response has invalid constraints: %s" % exc
+        ) from None
 
 
 def _validate_candidate(
@@ -140,6 +193,48 @@ def parse_generation_response(
     return _validate_candidate(
         _parse_candidate_response(response),
         require_measurement=require_measurement,
+    )
+
+
+def _format_backend_reply(constraints: BackendConstraints) -> str:
+    """Select and format only IDs originating from the official local table."""
+    matches = select_backends(constraints)
+    if matches:
+        backend_ids = "、".join("`%s`" % backend.id for backend in matches)
+        reasons = []
+        if constraints.min_qubits is not None:
+            reasons.append("支持至少 %d 比特" % constraints.min_qubits)
+        if constraints.require_qpu is True:
+            reasons.append("类型为真实量子硬件")
+        if constraints.require_no_queue:
+            reasons.append("能力表标记为零排队")
+        if constraints.cost_policy == "free_only":
+            reasons.append("能力表标记为完全免费")
+        elif constraints.cost_policy == "free_or_quota":
+            reasons.append("费用为免费或免费额度")
+        if constraints.allow_account_required is False:
+            reasons.append("无需账号")
+        reason = "，".join(reasons) or "满足已提取的全部约束"
+        return "满足条件的后端：%s。\n理由：%s；结果按官方能力表顺序列出。" % (
+            backend_ids,
+            reason,
+        )
+
+    relaxations = []
+    if constraints.min_qubits is not None:
+        relaxations.append("比特数")
+    if constraints.require_qpu is True:
+        relaxations.append("真机")
+    if constraints.require_no_queue:
+        relaxations.append("零排队")
+    if constraints.cost_policy in ("free_only", "free_or_quota"):
+        relaxations.append("费用")
+    if constraints.allow_account_required is False:
+        relaxations.append("账号")
+    categories = "、".join(relaxations) or "当前约束"
+    return (
+        "当前官方能力表中没有满足全部条件的后端。"
+        "可考虑放宽的约束类别：%s。" % categories
     )
 
 
@@ -194,16 +289,22 @@ def _repair_prompt(
 
 
 def agent_chat(prompt: str) -> str:
-    """Return valid QASM, allowing exactly one repair call after QASM failure."""
+    """Route one model response to deterministic selection or validated QASM."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("L2 prompt must be a non-empty string")
-    require_measurement = _requires_measurement(prompt)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
     raw_response = _call_model(messages)
-    candidate = _parse_candidate_response(raw_response)
+    payload = _parse_response_payload(raw_response)
+    if payload.get("task_type") == "select_backend":
+        constraints = _parse_backend_constraints(payload)
+        _parse_explanation(payload)
+        return _format_backend_reply(constraints)
+
+    require_measurement = _requires_measurement(prompt)
+    candidate = _parse_candidate_payload(payload)
     try:
         generated = _validate_candidate(
             candidate,
