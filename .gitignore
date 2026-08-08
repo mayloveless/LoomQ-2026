@@ -7,3 +7,5 @@ __pycache__/
 *.py[cod]
 
 starter_kit/.venv/
+
+starter_kit/.env.l2.local

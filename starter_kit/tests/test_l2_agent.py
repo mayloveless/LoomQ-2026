@@ -169,7 +169,7 @@ creg c[1];"""
     def test_state_only_request_accepts_unmeasured_qasm_in_one_call(self, chat):
         chat.return_value = completion(generation_json(qasm=STATE_ONLY_BELL_QASM))
 
-        reply = agent_chat("只制备 Bell 态")
+        reply = agent_chat("生成一个 2 比特 Bell 态，不要求测量。")
 
         chat.assert_called_once()
         circuit = parse_qasm(reply_qasm(reply))

@@ -34,7 +34,7 @@ _JSON_FENCE_RE = re.compile(
     r"^```json\s*\n(?P<body>.*?)\n```$", re.IGNORECASE | re.DOTALL
 )
 _NEGATED_MEASUREMENT_RE = re.compile(
-    r"(?:不(?:需要|要|进行)?|无需(?:进行)?|省略|移除|删除)"
+    r"(?:不(?:需要|要求|要|进行)?|无需(?:进行)?|省略|移除|删除)"
     r"(?:添加|进行|保留)?(?:任何)?(?:测量|测定|读出|采样)"
     r"|(?:without|no)\s+(?:any\s+)?(?:measurements?|measurement|measuring|readouts?|sampling)"
     r"|(?:do\s+not|don't|omit|remove)\s+(?:add\s+|include\s+|perform\s+)?"
