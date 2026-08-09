@@ -14,7 +14,14 @@ except ImportError:  # pragma: no cover - 由 starter_kit 评测根目录运行�
     import llm_client  # type: ignore[no-redef]
 
 from .backend_selector import BackendConstraints, select_backends
+from .parser import parse_qasm
 from .qasm_tools import QASMValidationError, extract_qasm, validate_qasm
+from .semantic_verifier import (
+    SemanticVerificationError,
+    TargetSpecification,
+    parse_target_specification,
+    verify_semantics,
+)
 
 
 SYSTEM_PROMPT = """你是 LoomQ 的量子任务约束提取与 OpenQASM 2.0 助手。
@@ -28,6 +35,15 @@ qasm 必须是完整的 OpenQASM 2.0 程序，包含 include 和 qreg；用户�
 选择后端时只提取用户约束，不要推荐或输出 backend ID，并返回：
 {"task_type":"select_backend","qasm":null,"backend_constraints":{"min_qubits":null,"require_qpu":null,"require_no_queue":false,"cost_policy":"free_only 或 free_or_quota 或 paid_allowed 或 unspecified","allow_account_required":null},"explanation":"简短说明"}
 未声明的约束使用 null、false 或 unspecified，不要擅自收紧。
+"""
+
+TARGET_JUDGE_SYSTEM_PROMPT = """你是独立的量子目标态规格提取器，只能依据用户原始请求判断目标，不能查看或猜测候选 QASM。
+只返回一个 JSON 对象，不返回额外散文，也绝对不要返回 QASM。
+如果目标可以可靠表示为纯态，返回：
+{"verification_mode":"statevector","qubit_count":2,"amplitudes":[{"basis":"00","real":0.7071067811865476,"imag":0.0},{"basis":"11","real":0.7071067811865476,"imag":0.0}],"explanation":"简短目标说明"}
+basis 按 q[0] 到 q[n-1] 的顺序书写；未列出的 basis amplitude 视为 0。必须给出归一化、有限数值的复振幅，并保留用户要求的相对相位。
+如果原始请求无法可靠转换为纯态目标，返回：
+{"verification_mode":"unsupported","explanation":"无法可靠进行纯态验证的原因"}
 """
 
 _JSON_FENCE_RE = re.compile(
@@ -65,6 +81,15 @@ class _CandidateResponse:
     task_type: str
     qasm: str
     explanation: str
+
+
+class _CandidateVerificationError(RuntimeError):
+    """Bounded candidate failure suitable for the one repair prompt."""
+
+    def __init__(self, diagnostic: str, fidelity: float | None = None) -> None:
+        super().__init__("candidate QASM failed local verification")
+        self.diagnostic = diagnostic
+        self.fidelity = fidelity
 
 
 def _response_content(response: Any) -> str:
@@ -196,6 +221,45 @@ def parse_generation_response(
     )
 
 
+def _parse_target_judge_response(response: Any) -> TargetSpecification:
+    payload = _parse_response_payload(response)
+    try:
+        return parse_target_specification(payload)
+    except RuntimeError as exc:
+        raise RuntimeError("L2 target judge returned an invalid specification") from None
+
+
+def _verify_candidate(
+    candidate: _CandidateResponse,
+    target: TargetSpecification,
+    *,
+    require_measurement: bool,
+) -> GenerationResponse:
+    try:
+        generated = _validate_candidate(
+            candidate,
+            require_measurement=require_measurement,
+        )
+    except QASMValidationError as exc:
+        raise _CandidateVerificationError(exc.diagnostic) from None
+
+    circuit = parse_qasm(generated.qasm)
+    try:
+        verification = verify_semantics(circuit, target)
+    except SemanticVerificationError:
+        raise _CandidateVerificationError(
+            "SemanticSimulationError: local statevector verification failed"
+        ) from None
+    if not verification.passed:
+        fidelity = verification.fidelity
+        if fidelity is None:
+            diagnostic = "SemanticVerificationError: candidate does not match target"
+        else:
+            diagnostic = "SemanticFidelityError: fidelity %.6f is below 0.970000" % fidelity
+        raise _CandidateVerificationError(diagnostic, fidelity=fidelity) from None
+    return generated
+
+
 def _format_backend_reply(constraints: BackendConstraints) -> str:
     """Select and format only IDs originating from the official local table."""
     matches = select_backends(constraints)
@@ -257,8 +321,10 @@ def _repair_prompt(
     prompt: str,
     candidate: str,
     diagnostic: str,
+    target: TargetSpecification,
     *,
     require_measurement: bool,
+    fidelity: float | None,
 ) -> str:
     """Build a bounded, explicit repair request with the original goal intact."""
     if require_measurement:
@@ -273,11 +339,13 @@ def _repair_prompt(
         "instruction": (
             "修复候选 QASM。返回完整、可独立运行的 OpenQASM 2.0，包含 include、"
             "qreg。%s必须保持原始用户请求中的目标态、目标功能和测量语义。"
-            "只返回约定 JSON，task_type 使用 repair_qasm。" % measurement_instruction
+            "独立 target spec 是固定裁判，不得修改。只返回约定 JSON，"
+            "task_type 使用 repair_qasm。" % measurement_instruction
         ),
         "original_user_request": prompt,
         "candidate_qasm": candidate,
-        "parser_error": diagnostic,
+        "target_spec": target.as_prompt_payload(),
+        "validation_error": diagnostic,
         "require_measurement": require_measurement,
         "response_schema": {
             "task_type": "repair_qasm",
@@ -285,6 +353,8 @@ def _repair_prompt(
             "explanation": "简短说明",
         },
     }
+    if fidelity is not None:
+        payload["fidelity"] = round(fidelity, 12)
     return json.dumps(payload, ensure_ascii=False)
 
 
@@ -305,12 +375,18 @@ def agent_chat(prompt: str) -> str:
 
     require_measurement = _requires_measurement(prompt)
     candidate = _parse_candidate_payload(payload)
+    judge_messages = [
+        {"role": "system", "content": TARGET_JUDGE_SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    target = _parse_target_judge_response(_call_model(judge_messages))
     try:
-        generated = _validate_candidate(
+        generated = _verify_candidate(
             candidate,
+            target,
             require_measurement=require_measurement,
         )
-    except QASMValidationError as first_error:
+    except _CandidateVerificationError as first_error:
         repair_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {
@@ -319,20 +395,23 @@ def agent_chat(prompt: str) -> str:
                     prompt,
                     candidate.qasm,
                     first_error.diagnostic,
+                    target,
                     require_measurement=require_measurement,
+                    fidelity=first_error.fidelity,
                 ),
             },
         ]
         repair_response = _call_model(repair_messages)
         repaired_candidate = _parse_candidate_response(repair_response)
         try:
-            generated = _validate_candidate(
+            generated = _verify_candidate(
                 repaired_candidate,
+                target,
                 require_measurement=require_measurement,
             )
-        except QASMValidationError:
+        except _CandidateVerificationError:
             raise RuntimeError(
-                "model produced invalid QASM twice; repair limit reached"
+                "model repair failed QASM semantic verification; repair limit reached"
             ) from None
 
     explanation = generated.explanation or "已生成并通过 OpenQASM 2.0 校验。"
