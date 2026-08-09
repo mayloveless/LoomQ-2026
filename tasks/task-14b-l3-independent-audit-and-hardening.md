@@ -1,32 +1,33 @@
-# Task 14B：L3 独立审计 + 隐藏测试加固
+# Task 14B：L3 独立破坏性审计 + 隐藏测试加固
 
 ## 背景
 
-Task 14A 已在独立分支 `feat/l3` 上完成第一版 L3 Hybrid-QASM Compiler，包含 Lexer / Parser / AST / RISC-V codegen / Adapter 接入 / L3 tests。
+Task 14A 已在独立分支 `feat/l3` 上完成第一版 L3 Hybrid-QASM Compiler，并报告：
 
-本任务必须由**新的 Codex thread**执行，目标不是继续沿着原实现思路开发，而是把自己当成：
+- 独立 Lexer / Parser / AST / RISC-V codegen；
+- `adapter.compile_hybrid()` 薄接线；
+- public L3 evaluator PASS；
+- 13/13 L3 tests PASS；
+- 5 个固定 seed、120 个随机程序、930 组 measurement 输入 differential test 全通过；
+- full tests 234 passed / 46 skipped；
+- 已自行修复字符串未闭合、临时寄存器覆盖、assignment scratch、零比较、顶层声明校验等问题；
+- 当前 `submission.yaml` 仍为 `l3:false`。
 
-> **不知道 14A 作者当时怎么想的独立 reviewer / hidden-test 设计者。**
+这些只是**待审计的实现声明，不是事实来源**。
 
-不要相信 14A 的实现报告，也不要因为公开 evaluator 通过就默认实现正确。
+本任务必须由新的 Codex thread 执行。你的角色不是继续实现 14A，而是：
 
-L3 官方隐藏评测会随机生成符合题面迷你文法的 Hybrid-QASM，并注入不同测量值，验证寄存器终态 100% 正确。因此本任务的核心是：
+> **官方 hidden-test 设计者 + 编译器 reviewer。目标是尽力把现有实现弄坏。**
 
-1. 从官方题面重新推导契约；
-2. 审查第一版实现是否真正覆盖契约；
-3. 主动构造 adversarial / hidden-like case；
-4. 对确认的问题直接做最小修复并补回归测试；
-5. 最终给出“是否可以准备开启 `l3:true`”的结论。
+不要重复做一遍“代码存在、公开测试能过”的基础检查。优先寻找那些 **14A 自测很容易和 production 实现共享同一种错误假设**、但正式随机评测可能暴露的问题。
+
+官方题面 / Starter Kit 是唯一 source of truth。
 
 ---
 
-## 第一原则
+# 0. 先重新建立官方契约
 
-### 1. 先审计，后修改
-
-开始时先阅读并自行建立正确模型，不要一上来重构代码。
-
-至少阅读：
+至少独立阅读：
 
 ```text
 problem_statement.md
@@ -38,13 +39,175 @@ starter_kit/loomq/l3/**
 starter_kit/tests/test_l3_hybrid.py
 ```
 
-如仓库内有 Task 14A 文档，只能作为实现背景，**不能作为规则来源**。
+不要把 Task 14A/14B 文档当规则。
 
-官方题面 / Starter Kit 是 source of truth。
+先用自己的话明确：
 
-### 2. 不碰 L1 / L2 语义
+- `compile_hybrid(hybrid_qasm_str) -> Tuple[list, str]` 的真实返回契约；
+- `quantum_ops` 到底应保留什么、排除什么、顺序要求是什么；
+- classical mini grammar **明确要求**什么；
+- 哪些能力只是当前实现扩展，并非官方要求；
+- `r1..r9 -> x1..x9`、`c[k] -> x10+k`；
+- TinyRISCVEmulator 的真实寄存器和指令限制；
+- hidden evaluator 最可能怎样随机生成和验证。
 
-L3 必须继续隔离。
+如果规则存在歧义，必须单独列为 `SPEC_AMBIGUITY`，不要擅自把自己的解释当官方事实。
+
+---
+
+# 1. 本轮最高优先级攻击面
+
+## A. c[k] / scratch 寄存器空间
+
+14A 报告当前策略：
+
+- `c[k] -> x10+k`；
+- scratch 从 `x31` 向下分配；
+- 排除 x1..x9 与所有程序引用的 measured registers；
+- 当前明确风险：只能表示到 `c[21]`，更深表达式可能耗尽 scratch。
+
+请不要只确认“会报错”。要从官方题面与 Emulator 推导：
+
+1. hidden generator 是否可能合法生成 `c[22+]`；
+2. 如果题面没规定 creg 上限，而 Emulator 只有 x0..x31，这是规则本身的隐含上限还是实现缺陷；
+3. scratch 分配是否在高 c 索引、多 measured bits、nested expression 下错误覆盖输入；
+4. 是否存在本来可以合法编译、却因为不必要 scratch pressure 被拒绝的官方语法程序。
+
+如果无法从官方规则证明 `c[22+]` 是必须支持的，不要为了猜测重写架构；但要给出明确风险结论。
+
+## B. 表达式语义：不要让 parser 和 reference 共享同一个误解
+
+重点确认官方 mini grammar 对以下内容的真实语义：
+
+```text
++
+-
+==
+!=
+括号
+负整数 / unary minus
+register / measured bit / integer
+```
+
+主动构造能区分错误 precedence / associativity 的程序，例如等价形态：
+
+```text
+r1 = 10 - 3 - 2;
+r1 = 10 - (3 - 2);
+r1 = -3 + 5;
+r1 = r2 - (r3 - 4);
+if ((r1 - 1) != (c[0] + 2)) { ... }
+```
+
+但：**只有官方文法允许的形态才作为 correctness gate。**
+
+如果当前实现支持了题面之外的复杂 condition/括号，只记录为扩展能力，不得因为扩展边缘行为失败就大改生产代码。
+
+## C. quantum_ops 提取与 canonicalization
+
+14A 报告会排除 header/declaration/classical block，并对量子操作做空白 canonicalization。
+
+这里要做语义攻击，而不是只比字符串：
+
+- classical block 前后的 gate / measurement 是否严格保序；
+- 参数表达式、负数、小数、`pi` 相关文本若属于现有合法 QASM，canonicalization 是否改变含义；
+- 逗号、下标、measurement mapping 是否被错误重写；
+- `//` / `/* */` 注释中的 `{ } ; classical` 是否扰乱 block 边界；
+- 字符串 `include "qelib1.inc"` 内字符是否扰乱扫描；
+- 多字符 gate / operand 不应被错误切分；
+- declarations/header 不应进入 quantum_ops。
+
+如果官方只要求“量子门/测量指令列表”，不要为了保留源文件格式做复杂 formatter；正确语义和顺序优先。
+
+## D. Differential test 是否真正独立
+
+14A 声称测试侧有独立 AST/reference interpreter。请检查这种“独立”是否真实：
+
+- expected 不能调用 production compiler/codegen helper；
+- expected 最好来自**随机模型本身**或独立 reference evaluator，而不是 production parser 解析出的同一 AST；
+- 若 generator → source → production parser/codegen 与 generator model → reference interpreter 对比，这属于较强 differential test；
+- 若两边共享 parser/AST 构造逻辑，指出共同失效风险并改进测试。
+
+本轮不要单纯把随机程序数量做大；**先提高 oracle 独立性，再增加数量。**
+
+## E. 顶层 Hybrid-QASM 边界
+
+从官方规则判断并测试：
+
+- header/include/qreg/creg 合法/非法形态；
+- classical block 前后存在量子操作；
+- 是否明确只要求一个 classical block；
+- 若 multiple classical blocks 未被官方承诺，不把它作为 enable 阻塞项；
+- braces/semicolon 出现在注释或字符串里时不能破坏顶层扫描；
+- malformed input 必须 deterministic fail，不能 silent miscompile。
+
+---
+
+# 2. Compiler / RISC-V codegen 审计
+
+重点确认最终寄存器语义，而不是汇编“看起来合理”。
+
+必须攻击：
+
+- `==` / `!=` 分支方向；
+- if / else label 唯一性；
+- nested / sequential if（仅在官方语法允许范围内）；
+- `a-b` 操作数顺序；
+- self assignment；
+- register-to-register；
+- 0、正数、负数；
+- 未初始化 r 寄存器与 Emulator 初始值语义；
+- temp 生命周期与复用；
+- 深表达式；
+- 多次连续 `compile_hybrid()` 是否 deterministic 且无 counter/state 泄漏；
+- assembly 只能使用官方 Emulator 支持的：
+
+```text
+li, add, sub, addi, beq, bne, j
+```
+
+禁止通过修改 `riscv_emulator.py` 来让 production compiler 通过测试。
+
+---
+
+# 3. Adversarial + randomized differential testing
+
+本轮目标不是简单重复 14A 的 120 programs。
+
+先新增一组**手写 adversarial cases**，专门覆盖上述 A–E 风险；再做固定 seed differential test。
+
+随机测试建议：
+
+- 至少 1000 个合法 program；
+- 每个 program 根据涉及 measured bits 选择穷举或有代表性的 measurement combinations；
+- 总执行 case 数清楚记录；
+- 覆盖 r1/r9、c[0]/高位 c、正负/零、顺序赋值、if 两分支、多个 if、复杂 subtraction、scratch pressure；
+- whitespace / line comment / block comment 变体；
+- 失败必须打印 seed + 最小必要 source。
+
+**重要：**随机 generator 自己也必须遵守你从官方题面重新推导出的 grammar，不要用实现扩展去制造“假 hidden failure”。
+
+Reference Interpreter 必须与 production codegen 独立。
+
+---
+
+# 4. Mutation / metamorphic checks（低成本高价值）
+
+在不增加复杂框架的前提下，对一部分合法程序做语义保持变换，确认编译结果终态不变，例如：
+
+- 改空白 / 换行；
+- 加 `//` / `/* */` 注释；
+- 对允许的表达式增加不改变语义的括号；
+- 更换无关 label 不适用，因为 label 由 compiler 生成；
+- 重复调用同一输入应产生 deterministic assembly。
+
+不要引入 property-testing 第三方依赖。
+
+---
+
+# 5. 修改原则
+
+先审计，后修改。
 
 允许修改：
 
@@ -54,237 +217,57 @@ starter_kit/tests/test_l3_hybrid.py
 starter_kit/adapter.py   # 仅 compile_hybrid 接线必要时
 ```
 
-除非发现明确的共享基础设施问题，否则不要修改 L1 / L2 代码。
+不要：
 
-### 3. 本任务仍然不要开启 submission.yaml 的 l3:true
+- 修改 L1/L2 语义；
+- 修改官方 `riscv_emulator.py` 来迁就 compiler；
+- 开启 `submission.yaml` 的 `l3:true`；
+- 做 Web；
+- 为 L3 增加 LLM；
+- 针对 public evaluator 样例硬编码；
+- 因为“可能存在”就无限扩 grammar；
+- 为代码风格做大重构。
 
-即使全部通过，也只输出“建议开启 / 暂不建议开启”。
-
-最终开关放到后续收口任务。
-
----
-
-# Part A：从官方规则重建 L3 契约
-
-先用自己的话写出一份简短 checklist，至少确认：
-
-- `compile_hybrid(hybrid_qasm_str) -> Tuple[list, str]` 的返回契约；
-- quantum_ops 应保留什么、排除什么、顺序如何；
-- `classical { ... }` 的完整迷你文法；
-- `r1..r9 -> x1..x9`；
-- `c[k] -> x10+k`；
-- 官方 Emulator 支持的指令集合；
-- 隐藏评测真正验证的东西是什么；
-- 哪些行为题面没有承诺，不应该自行扩展后依赖。
-
-重点防止“实现支持很多东西，但恰好漏掉官方明确要求”的情况。
+发现确定的 contract bug，可以直接做最小修复并补 regression test。
 
 ---
 
-# Part B：架构与正确性审计
+# 6. 最终回归
 
-审查当前：
-
-```text
-lexer.py
-parser.py
-ast.py
-compiler.py
-```
-
-重点检查以下问题。
-
-## 1. Lexer
-
-确认：
-
-- token 边界不会依赖公开样例格式；
-- 任意合法空白 / 换行不会改变语义；
-- `//` 注释不会破坏 token 化；
-- `==` / `!=` 不会与单字符 token 混淆；
-- `+` / `-` 的词法和表达式语义一致；
-- 整数字面量边界正确；
-- `r1..r9` 与 `c[k]` 索引校验合理；
-- 非法 token 能稳定失败，而不是静默吞掉。
-
-不要为了鲁棒性实现无限制 OpenQASM / C 语法。
-
-## 2. Parser / AST
-
-确认：
-
-- classical block 的边界解析不靠脆弱字符串 split / regex 特判；
-- 顺序赋值严格保持顺序；
-- if / else 结构语义正确；
-- 条件 `==` / `!=` 都正确；
-- `+` / `-` 表达式的结合方式与题面一致；
-- register / integer / measured bit 的使用符合题面；
-- label / AST 节点不存在共享可变状态或跨调用污染；
-- 多次调用 `compile_hybrid()` 是独立且 deterministic 的。
-
-如果题面没有要求某种嵌套或多 block 形式，不要为了“更完整语言”进行大重构；但必须确认当前行为不会误解析合法输入。
-
-## 3. quantum_ops 提取
-
-这是容易被忽略的一部分。
-
-确认：
-
-- 量子门和 measurement 按输入原顺序返回；
-- classical block 本身绝不进入 quantum_ops；
-- classical block 前后的量子操作都不会丢；
-- 注释 / 空白不会导致操作丢失或粘连；
-- 不把声明 / include 等错误当作量子执行操作（以官方契约为准重新判断）；
-- 不因为门参数、多个量子位 operand 等常见 QASM 形式破坏提取。
-
-不要复用 L1 Parser 时强行把 Hybrid-QASM 整体当成普通 OpenQASM 解析，除非确认 classical block 已被安全剥离且语义无损。
-
-## 4. RISC-V codegen
-
-重点确认编译结果在官方 `TinyRISCVEmulator` 上的**最终寄存器语义**正确，而不只是汇编“看起来合理”。
-
-检查：
-
-- `li / add / sub / addi / beq / bne / j` 使用不超出官方支持子集；
-- r1..r9 映射正确；
-- c[k] 测量值读取正确；
-- 临时寄存器不会覆盖用户寄存器或测量输入寄存器；
-- if / else label 唯一，不发生嵌套 / 多条件冲突；
-- 连续多个 if 或赋值不会跳错 label；
-- `==` 与 `!=` 的分支方向正确；
-- `a-b` 操作数顺序不能反；
-- self assignment（如 `r1 = r1 + 5`）正确；
-- register-to-register 运算正确；
-- 0、负结果等普通整数语义正确；
-- 编译器内部 label/temp counter 每次调用不会产生非确定性污染。
-
----
-
-# Part C：建立独立 Reference Interpreter
-
-不要只拿“compiler 输出”与自己写的预期汇编比较。
-
-为了做真正 differential testing，请在**测试代码内部**实现一个很小的 reference evaluator / interpreter：
-
-```text
-Hybrid classical AST / 随机测试模型
-            ↓
-直接用 Python 计算期望 r1..r9 终态
-```
-
-然后另一边：
-
-```text
-同一输入
-  ↓
-compile_hybrid
-  ↓
-RISC-V assembly
-  ↓
-TinyRISCVEmulator
-  ↓
-实际 x1..x9 终态
-```
-
-比较两边结果。
-
-Reference Interpreter 不允许调用 production compiler 的 codegen helper 来计算 expected，否则失去独立性。
-
----
-
-# Part D：Adversarial / hidden-like 随机测试
-
-在固定 seed 下生成足够多的合法组合，建议不少于 **1000 个 program × 多组 measurement 输入**，运行时间允许时可更多。
-
-覆盖组合至少包括：
-
-- 单赋值；
-- 连续多个赋值；
-- `rA = literal`；
-- register + register；
-- register - register；
-- register +/- integer；
-- self update；
-- `c[k] == value`；
-- `c[k] != value`；
-- if/else 两个方向分别命中；
-- 多个 measured bits；
-- 多个 if 顺序执行；
-- classical block 前后都有 quantum operation；
-- whitespace / newline / comments 变体；
-- 至少覆盖 r1 与 r9、c[0] 与更高索引；
-- 产生 0 / 正数 / 负数结果。
-
-若官方文法明确允许嵌套 if，则必须覆盖；若题面并未承诺，则不要擅自把支持嵌套作为通过条件。
-
-所有随机测试必须固定 seed、可复现，并在失败时打印最小必要 case / seed 方便复现。
-
----
-
-# Part E：错误输入与 fail-fast
-
-补少量关键非法输入测试即可，不要把任务变成完整编译器诊断工程。
-
-至少确认：
-
-- 未闭合 classical block；
-- 非法 register；
-- 非法 measured bit；
-- 非法 operator / token；
-- 缺少必要语法元素。
-
-要求失败明确、deterministic，不得 silently compile 成另一种程序。
-
----
-
-# Part F：回归与官方 evaluator
-
-完成确认问题的最小修复后，至少运行：
+至少运行：
 
 ```bash
 python starter_kit/evaluator.py --level l3
 ```
 
-以及仓库现有 L3 单测、完整 Python 测试套件（按当前项目已有命令执行）。
+以及：
 
-另外确认：
-
-- `git diff --check` 通过；
-- `adapter.compile_hybrid()` 签名未变；
-- `submission.yaml` 仍保持 `l3:false`；
-- L1 / L2 既有测试没有因为 L3 改动退化；
-- 无新增不必要依赖。
-
----
-
-# 不要做
-
-本任务不要：
-
-- 开启 `l3:true`；
-- 修改 L2 Prompt / Agent；
-- 修改 L1 Parser / serializer / runner 的既有语义；
-- 做 Web UI；
-- 为 L3 增加 LLM；
-- 根据公开 evaluator 样例硬编码；
-- 为“可能存在”的语言特性无限扩展 grammar；
-- 大规模重构已经正确的代码只为了风格。
+- L3 tests；
+- 当前项目完整 Python tests；
+- `git diff --check`；
+- 确认 `submission.yaml` 仍为 `l3:false`；
+- 确认没有新增不必要依赖；
+- 确认 L1/L2 生产代码没有被本任务改动。
 
 ---
 
-# 交付报告
+# 7. 最终报告
 
-结束时一次性汇报，不要中途等待确认。
+一次性汇报，不要中途等待确认。
 
-报告必须包含：
+## Independent contract summary
 
-## 1. Independent contract summary
+只写从官方规则推导出的契约，并单列：
 
-你从官方规则重新推导出的 L3 契约，简短列出。
+```text
+SPEC_AMBIGUITY
+```
 
-## 2. Findings
+如无则写 none。
 
-按严重程度列出：
+## Findings
+
+按：
 
 ```text
 Critical
@@ -293,70 +276,67 @@ Medium
 Low
 ```
 
-每个问题说明：
+每项写：触发输入、违反什么契约、是否修复、对应测试。
 
-- 触发输入；
-- 为什么违反官方契约 / 为什么可能 hidden fail；
-- 是否已修复；
-- 对应新增测试。
+特别回答五个问题：
 
-如果某级无问题明确写 none。
+1. `c[22+]` 是实现缺陷、官方隐含不支持，还是无法从题面确定？
+2. scratch allocator 是否存在合法程序误拒绝/覆盖风险？
+3. expression precedence / associativity 是否与官方文法一致？
+4. quantum_ops canonicalization 是否可能改变合法量子指令语义？
+5. 14A differential oracle 是否真正独立？
 
-## 3. Architecture verdict
+## Random / adversarial evidence
+
+写清：
+
+- hand-written adversarial case 数；
+- seeds；
+- random program 数；
+- measurement 策略；
+- 总执行 cases；
+- mutation/metamorphic case 数；
+- 修复前后失败数。
+
+## Architecture verdict
 
 回答：
 
 - Lexer / Parser / AST / Codegen 分层是否健康；
-- 是否存在公开样例特判；
-- 是否存在不必要耦合 L1/L2；
-- 是否建议重构，还是保持当前结构。
+- 是否存在 public sample 特判；
+- 是否与 L1/L2 不必要耦合；
+- 是否需要重构，还是应该停止改动。
 
-## 4. Random differential evidence
+## Regression evidence
 
-写清：
+列出 public evaluator、L3 tests、full tests、diff check、`l3:false`。
 
-- seed；
-- program 数；
-- 每个 program 的 measurement 组合策略；
-- 总执行 case 数；
-- 失败数；
-- 如发现 bug，修复前 / 修复后的结果。
+## Final recommendation
 
-## 5. Regression evidence
-
-列出：
-
-- public L3 evaluator；
-- L3 tests；
-- full tests；
-- git diff --check；
-- `l3:false` 状态。
-
-## 6. Final recommendation
-
-只能给出其中一个：
+只能输出：
 
 ```text
 READY_FOR_L3_ENABLE_REVIEW
+```
+
+或
+
+```text
 NOT_READY_FOR_L3_ENABLE_REVIEW
 ```
 
-并用 2–5 条理由解释。
+并给 2–5 条理由。
 
 ---
 
 # 验收标准
 
-本 Task 完成要求：
-
-1. 从官方题面独立重建契约，而不是相信 Task 14A；
-2. 对 Lexer / Parser / quantum_ops / Codegen 做实质审计；
-3. 建立与 production codegen 独立的 reference interpreter；
-4. 完成大批量固定 seed differential testing；
-5. 所有确认 bug 已最小修复并有回归测试；
-6. public L3 evaluator 通过；
-7. 完整测试不退化；
-8. 仍保持 `l3:false`；
-9. 给出明确是否进入 enable review 的结论。
+1. 不重复相信 14A 报告，从官方规则独立重建契约；
+2. 重点攻击 14A 已知风险与可能 shared-oracle blind spot；
+3. hand-written adversarial + 独立 differential + metamorphic checks 都有证据；
+4. 确认 bug 只做最小修复；
+5. public evaluator 与完整回归通过；
+6. `l3:false` 保持不变；
+7. 给出明确 enable review 结论。
 
 完成后不要 commit、不要 push，等待人工复核。
