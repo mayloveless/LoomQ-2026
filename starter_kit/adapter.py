@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Tuple
 
 from loomq.parser import parse_qasm
 from loomq.l2_agent import agent_chat as _l2_agent_chat
+from loomq.l3 import compile_hybrid_source
 from loomq.runners import run_braket, run_originq, run_spinq
 from loomq.serializers import serialize_braket, serialize_originq, serialize_spinq
 
@@ -55,6 +56,4 @@ def agent_chat(prompt: str) -> str:
 
 def compile_hybrid(hybrid_qasm_str: str) -> Tuple[List[str], str]:
     """Optional L3 entry point. Return quantum operations and RISC-V assembly."""
-    raise NotImplementedError(
-        "L3 is optional; implement compile_hybrid(hybrid_qasm_str) to enter"
-    )
+    return compile_hybrid_source(hybrid_qasm_str)
