@@ -13,6 +13,12 @@ from .serializers.braket import serialize_braket
 
 DEFAULT_FIDELITY_THRESHOLD = 0.97
 _NORMALIZATION_TOLERANCE = 1e-6
+_UNSUPPORTED_REASONS = {
+    "no_unique_target",
+    "mixed_state",
+    "distribution_only",
+    "insufficient_spec",
+}
 
 
 class TargetSpecificationError(RuntimeError):
@@ -37,6 +43,7 @@ class TargetSpecification:
     qubit_count: int | None
     amplitudes: tuple[TargetAmplitude, ...]
     explanation: str
+    unsupported_reason: str | None = None
 
     def as_prompt_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -54,6 +61,8 @@ class TargetSpecification:
                 }
                 for amplitude in self.amplitudes
             ]
+        elif self.unsupported_reason is not None:
+            payload["unsupported_reason"] = self.unsupported_reason
         return payload
 
 
@@ -95,12 +104,18 @@ def parse_target_specification(payload: Any) -> TargetSpecification:
             raise TargetSpecificationError(
                 "explicit pure-state target must use statevector verification"
             )
+        unsupported_reason = payload.get("unsupported_reason")
+        if unsupported_reason not in _UNSUPPORTED_REASONS:
+            raise TargetSpecificationError(
+                "unsupported target must provide a valid unsupported_reason"
+            )
         return TargetSpecification(
             verification_mode="unsupported",
             pure_state_requested=False,
             qubit_count=None,
             amplitudes=(),
             explanation=explanation.strip(),
+            unsupported_reason=unsupported_reason,
         )
     if mode != "statevector":
         raise TargetSpecificationError("unsupported target verification_mode")

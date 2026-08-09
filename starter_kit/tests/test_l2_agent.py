@@ -5,7 +5,11 @@ import unittest
 from unittest import mock
 
 import adapter
-from loomq.l2_agent import agent_chat, parse_generation_response
+from loomq.l2_agent import (
+    agent_chat,
+    parse_generation_response,
+    requires_statevector_verification,
+)
 from loomq.ir import (
     ClassicalRegisterRef,
     GateOperation,
@@ -81,6 +85,7 @@ def unsupported_target_json():
         {
             "verification_mode": "unsupported",
             "pure_state_requested": False,
+            "unsupported_reason": "no_unique_target",
             "explanation": "no explicit pure-state target",
         }
     )
@@ -102,6 +107,32 @@ class L2AgentTests(unittest.TestCase):
         )
         verifier.start()
         self.addCleanup(verifier.stop)
+
+    def test_local_statevector_guard_is_conservative_and_deterministic(self):
+        for prompt in (
+            "制备 Bell+ 态",
+            "prepare an EPR pair",
+            "生成 GHZ 态",
+            "制备 (|00> - |11>)/sqrt(2)",
+            "给出每个 basis amplitude",
+            "指定各基态振幅",
+            "保持指定的 relative phase",
+            "prepare this pure state",
+            "perform state preparation for a quantum state",
+            "制备指定量子态",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertTrue(requires_statevector_verification(prompt))
+
+        for prompt in (
+            "设计一个量子实验",
+            "实现 Grover 搜索算法",
+            "运行 amplitude amplification 算法",
+            "实现振幅放大算法",
+            "生成一个自定义电路",
+        ):
+            with self.subTest(prompt=prompt):
+                self.assertFalse(requires_statevector_verification(prompt))
 
     @mock.patch("loomq.l2_agent.llm_client.chat_completion")
     def test_adapter_returns_parser_valid_qasm_and_calls_model_twice(self, chat):

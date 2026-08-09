@@ -67,6 +67,7 @@ class TargetSpecificationTests(unittest.TestCase):
                 {
                     "verification_mode": "unsupported",
                     "pure_state_requested": False,
+                    "unsupported_reason": "no_unique_target",
                     "qasm": "OPENQASM 2.0;",
                 }
             )
@@ -79,9 +80,38 @@ class TargetSpecificationTests(unittest.TestCase):
                 {
                     "verification_mode": "unsupported",
                     "pure_state_requested": True,
+                    "unsupported_reason": "insufficient_spec",
                     "explanation": "judge failed to express the requested state",
                 }
             )
+
+    def test_unsupported_reason_is_required_and_enumerated(self):
+        for reason in (
+            "no_unique_target",
+            "mixed_state",
+            "distribution_only",
+            "insufficient_spec",
+        ):
+            specification = parse_target_specification(
+                {
+                    "verification_mode": "unsupported",
+                    "pure_state_requested": False,
+                    "unsupported_reason": reason,
+                    "explanation": "test",
+                }
+            )
+            self.assertEqual(specification.unsupported_reason, reason)
+
+        for reason in (None, "unknown"):
+            with self.assertRaisesRegex(TargetSpecificationError, "unsupported_reason"):
+                parse_target_specification(
+                    {
+                        "verification_mode": "unsupported",
+                        "pure_state_requested": False,
+                        "unsupported_reason": reason,
+                        "explanation": "test",
+                    }
+                )
 
 
 @unittest.skipUnless(BRAKET_INSTALLED, "amazon-braket-sdk is not installed")

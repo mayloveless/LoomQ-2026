@@ -44,8 +44,9 @@ TARGET_JUDGE_SYSTEM_PROMPT = """你是独立的量子目标态规格提取器，
 {"verification_mode":"statevector","pure_state_requested":true,"qubit_count":2,"amplitudes":[{"basis":"00","real":0.7071067811865476,"imag":0.0},{"basis":"11","real":0.7071067811865476,"imag":0.0}],"explanation":"简短目标说明"}
 basis 按 q[0] 到 q[n-1] 的顺序书写；未列出的 basis amplitude 视为 0。必须给出归一化、有限数值的复振幅，并保留用户要求的相对相位。
 如果原始请求无法可靠转换为纯态目标，返回：
-{"verification_mode":"unsupported","pure_state_requested":false,"explanation":"无法可靠进行纯态验证的原因"}
-明确要求 Bell、GHZ、给定纯态振幅或其他明确 pure-state 目标时，pure_state_requested 必须为 true，且不得返回 unsupported。
+{"verification_mode":"unsupported","pure_state_requested":false,"unsupported_reason":"no_unique_target 或 mixed_state 或 distribution_only 或 insufficient_spec","explanation":"无法可靠进行纯态验证的原因"}
+Bell、EPR、GHZ 等命名纯态，以及明确 ket、amplitude、relative phase、pure-state 或 state-preparation 目标必须返回 statevector。
+不得因为目标复杂、包含相位或不知道如何构造电路而返回 unsupported。unsupported 只允许用于没有唯一目标态、mixed state、仅有测量分布或信息不足的请求。
 """
 
 _JSON_FENCE_RE = re.compile(
@@ -63,6 +64,20 @@ _NEGATED_MEASUREMENT_RE = re.compile(
 _MEASUREMENT_REQUEST_RE = re.compile(
     r"测量|测定|读出|采样|measure(?:ment|ments|d|s|ing)?|read[ -]?outs?|"
     r"sampl(?:e|es|ed|ing)|shots?|counts?",
+    re.IGNORECASE,
+)
+_NAMED_PURE_STATE_RE = re.compile(
+    r"\b(?:bell|epr|ghz)\b|贝尔|格林伯格[－—-]?霍恩[－—-]?蔡林格",
+    re.IGNORECASE,
+)
+_KET_STATE_RE = re.compile(r"\|\s*[01]+\s*(?:>|⟩)")
+_EXPLICIT_PURE_STATE_RE = re.compile(
+    r"(?:basis|state|ket)\s+amplitudes?|"
+    r"(?:指定|明确|目标|各(?:基态|基矢|态)).{0,8}振幅|振幅.{0,8}(?:为|分别|等于)|"
+    r"relative\s+phase|相对相位|"
+    r"pure[-\s]?state|纯态|state[-\s]?preparation|"
+    r"prepare\b.{0,32}\bquantum\s+state\b|"
+    r"制备.{0,24}(?:量子态|目标态|纠缠态|叠加态)",
     re.IGNORECASE,
 )
 
@@ -319,6 +334,21 @@ def _requires_measurement(prompt: str) -> bool:
     return _MEASUREMENT_REQUEST_RE.search(without_negations) is not None
 
 
+def requires_statevector_verification(prompt: str) -> bool:
+    """Return whether the original request clearly names a pure-state target."""
+    if not isinstance(prompt, str):
+        return False
+    # 这里只决定是否禁止降级，不在本地推导目标振幅或生成电路。
+    return any(
+        pattern.search(prompt) is not None
+        for pattern in (
+            _NAMED_PURE_STATE_RE,
+            _KET_STATE_RE,
+            _EXPLICIT_PURE_STATE_RE,
+        )
+    )
+
+
 def _repair_prompt(
     prompt: str,
     candidate: str,
@@ -382,6 +412,10 @@ def agent_chat(prompt: str) -> str:
         {"role": "user", "content": prompt},
     ]
     target = _parse_target_judge_response(_call_model(judge_messages))
+    if requires_statevector_verification(prompt) and target.verification_mode == "unsupported":
+        raise RuntimeError(
+            "L2 target judge cannot downgrade an explicit pure-state request"
+        )
     try:
         generated = _verify_candidate(
             candidate,
@@ -420,4 +454,9 @@ def agent_chat(prompt: str) -> str:
     return "%s\n\n```qasm\n%s\n```" % (explanation, generated.qasm)
 
 
-__all__ = ["GenerationResponse", "agent_chat", "parse_generation_response"]
+__all__ = [
+    "GenerationResponse",
+    "agent_chat",
+    "parse_generation_response",
+    "requires_statevector_verification",
+]

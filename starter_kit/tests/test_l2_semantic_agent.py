@@ -67,7 +67,37 @@ def bell_target():
     )
 
 
+def unsupported_target(reason="no_unique_target"):
+    return completion(
+        {
+            "verification_mode": "unsupported",
+            "pure_state_requested": False,
+            "unsupported_reason": reason,
+            "explanation": "request has no unique pure-state target",
+        }
+    )
+
+
 class L2SemanticAgentTests(unittest.TestCase):
+    @mock.patch("loomq.l2_agent.verify_semantics")
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_local_guard_rejects_unsupported_false_for_explicit_pure_states(
+        self, chat, verifier
+    ):
+        prompts = (
+            "制备 Bell+ 态",
+            "生成三比特 GHZ 态",
+            "制备 (|00> + |11>)/sqrt(2) 的明确振幅纯态",
+        )
+        for prompt in prompts:
+            with self.subTest(prompt=prompt):
+                chat.reset_mock()
+                chat.side_effect = [candidate(CORRECT_BELL), unsupported_target()]
+                with self.assertRaisesRegex(RuntimeError, "cannot downgrade"):
+                    adapter.agent_chat(prompt)
+                self.assertEqual(chat.call_count, 2)
+        verifier.assert_not_called()
+
     @mock.patch("loomq.l2_agent.verify_semantics")
     @mock.patch("loomq.l2_agent.llm_client.chat_completion")
     def test_correct_candidate_uses_independent_judge_and_two_calls(
@@ -143,13 +173,7 @@ class L2SemanticAgentTests(unittest.TestCase):
     def test_unsupported_target_downgrades_to_parser_validation(self, chat):
         chat.side_effect = [
             candidate(CORRECT_BELL),
-            completion(
-                {
-                    "verification_mode": "unsupported",
-                    "pure_state_requested": False,
-                    "explanation": "request is not a reliable pure-state target",
-                }
-            ),
+            unsupported_target(),
         ]
 
         reply = adapter.agent_chat("生成一个自定义实验电路")
