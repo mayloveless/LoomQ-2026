@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard } from './App'
+import { ConceptCard, SCENARIOS, ScenarioContext } from './App'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -27,5 +27,28 @@ describe('Just-in-time concept card', () => {
         }}
       />,
     )).toBe('')
+  })
+})
+
+describe('Task 13D scenario entry', () => {
+  it('keeps stable prompts behind developer-friendly scenario titles', () => {
+    expect(SCENARIOS.slice(0, 3).map((scenario) => scenario.prompt)).toEqual([
+      '生成一个 Bell 态并测量',
+      '生成一个 3 比特 GHZ 态并测量',
+      '生成一个带相对相位的 Bell- 态，不要求测量',
+    ])
+    expect(SCENARIOS.slice(0, 3).map((scenario) => scenario.title)).toEqual([
+      '两个结果为什么总是同步？',
+      '三个量子位怎样变成一个整体？',
+      '概率没变，量子状态真的没变吗？',
+    ])
+  })
+
+  it('renders the lightweight comparison context from static metadata', () => {
+    const markup = renderToStaticMarkup(<ScenarioContext scenario={SCENARIOS[0]} />)
+
+    expect(markup).toContain('普通程序怎么理解？')
+    expect(markup).toContain('量子版本有什么不同？')
+    expect(markup).toContain('这次重点看什么？')
   })
 })

@@ -18,11 +18,61 @@ import {
   stepTitle,
 } from './viewModel'
 
-const EXAMPLES = [
-  '生成一个 Bell 态并测量',
-  '生成一个 3 比特 GHZ 态并测量',
-  '生成一个带相对相位的 Bell- 态，不要求测量',
-  '设计一个搜索的电路',
+export type Scenario = {
+  id: string
+  tag: string
+  title: string
+  prompt: string
+  ordinary: string
+  quantum: string
+  focus: string
+}
+
+export const SCENARIOS: Scenario[] = [
+  {
+    id: 'bell',
+    tag: 'BELL',
+    title: '两个结果为什么总是同步？',
+    prompt: '生成一个 Bell 态并测量',
+    ordinary: '生成一个随机 bit，再复制它，也能得到两个相同值。',
+    quantum: '不复制经典结果，而是先建立两个量子位的纠缠，再分别测量。',
+    focus: '观察“叠加 → 纠缠 → 测量”如何一步步建立。',
+  },
+  {
+    id: 'ghz',
+    tag: 'GHZ',
+    title: '三个量子位怎样变成一个整体？',
+    prompt: '生成一个 3 比特 GHZ 态并测量',
+    ordinary: '普通程序可以复制同一个值，让三个变量保持一致。',
+    quantum: '量子电路把两个量子位的关联继续传播到第三个量子位。',
+    focus: '观察关联怎样从两个量子位逐步扩展到三个。',
+  },
+  {
+    id: 'phase',
+    tag: 'PHASE',
+    title: '概率没变，量子状态真的没变吗？',
+    prompt: '生成一个带相对相位的 Bell- 态，不要求测量',
+    ordinary: '经典直觉通常只比较每个结果出现的概率。',
+    quantum: '量子状态还包含相位；相位不一定立即改变概率，却会影响后续干涉。',
+    focus: '留意概率不变时，复振幅的相位如何发生变化。',
+  },
+  {
+    id: 'search',
+    tag: 'SEARCH',
+    title: '怎样让目标答案更容易被找到？',
+    prompt: '设计一个搜索的电路',
+    ordinary: '普通搜索通常逐项检查候选，直到找到符合条件的答案。',
+    quantum: '量子版本先组合多个候选，再用干涉改变它们被测到的机会。',
+    focus: '观察叠加、条件操作和测量如何组成一次搜索尝试。',
+  },
+]
+
+const LOADING_STAGES = [
+  '理解你的问题',
+  '生成量子程序',
+  '执行本地语法校验',
+  '验证量子状态',
+  '准备可视化解释',
 ]
 
 const AGENT_LABELS: Record<string, string> = {
@@ -415,9 +465,80 @@ function BackendResult({ events, reply }: { events: TraceEvent[]; reply: string 
   )
 }
 
-function EmptyWorkspace({ loading = false }: { loading?: boolean }) {
+export function ScenarioContext({ scenario }: { scenario: Scenario }) {
   return (
-    <div className="workspace empty-workspace">
+    <section className="scenario-context" aria-label="示例背景">
+      <div className="context-heading">
+        <span>你正在理解什么？</span>
+        <strong>{scenario.title}</strong>
+        <em>{scenario.tag}</em>
+      </div>
+      <div className="context-item">
+        <span>普通程序怎么理解？</span>
+        <p>{scenario.ordinary}</p>
+      </div>
+      <div className="context-item">
+        <span>量子版本有什么不同？</span>
+        <p>{scenario.quantum}</p>
+      </div>
+      <div className="context-item focus-item">
+        <span>这次重点看什么？</span>
+        <p>{scenario.focus}</p>
+      </div>
+    </section>
+  )
+}
+
+function ScenarioGrid({
+  selectedId,
+  onSelect,
+}: {
+  selectedId: string | null
+  onSelect: (scenario: Scenario) => void
+}) {
+  return (
+    <div className="scenario-grid" aria-label="场景示例">
+      {SCENARIOS.map((scenario, index) => (
+        <button
+          className={selectedId === scenario.id ? 'active' : ''}
+          key={scenario.id}
+          onClick={() => onSelect(scenario)}
+        >
+          <span><em>0{index + 1}</em>{scenario.tag}</span>
+          <strong>{scenario.title}</strong>
+          <small>{scenario.focus}</small>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function LoadingProcess() {
+  return (
+    <div className="loading-process" aria-label="LoomQ 正在准备调试结果">
+      <div className="loading-process-heading">
+        <span className="loading-orbit" aria-hidden="true">⌁</span>
+        <div>
+          <h2>LoomQ 正在准备这次调试</h2>
+          <p>以下是等待阶段提示，真实验证结果将在请求完成后展示。</p>
+        </div>
+      </div>
+      <ol>
+        {LOADING_STAGES.map((stage, index) => (
+          <li key={stage} style={{ animationDelay: `${index * .72}s` }}>
+            <i aria-hidden="true" />
+            <span>{stage}</span>
+          </li>
+        ))}
+      </ol>
+      <small>非实时 Trace · 不预先声明校验或验证结果</small>
+    </div>
+  )
+}
+
+function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scenario?: Scenario }) {
+  return (
+    <div className={`workspace empty-workspace ${loading ? 'loading-workspace' : ''}`}>
       <div className="empty-rail panel">
         <span className="rail-label">DEBUG SESSION</span>
         <div className="skeleton-line long" />
@@ -425,25 +546,34 @@ function EmptyWorkspace({ loading = false }: { loading?: boolean }) {
         <div className="skeleton-line short" />
       </div>
       <div className="empty-main panel">
-        <div className={`empty-icon ${loading ? 'loading' : ''}`}>⌁</div>
-        <h2>{loading ? '正在生成新的量子电路' : '准备开始一次量子调试'}</h2>
-        <p>{loading
-          ? '完成生成与验证后，这里会展示本次请求对应的 Circuit Trace。'
-          : '选择示例或描述目标，LoomQ 会生成、验证并拆解每一步电路状态。'}</p>
-        {!loading && <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 开始调试</span>}
+        {loading ? <LoadingProcess /> : scenario ? (
+          <>
+            <ScenarioContext scenario={scenario} />
+            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 生成并调试</span>
+          </>
+        ) : (
+          <>
+            <div className="empty-icon">⌁</div>
+            <h2>准备开始一次量子调试</h2>
+            <p>选择示例或描述目标，LoomQ 会生成、验证并拆解每一步电路状态。</p>
+            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 生成并调试</span>
+          </>
+        )}
       </div>
     </div>
   )
 }
 
 function App() {
-  const [prompt, setPrompt] = useState(EXAMPLES[0])
+  const [prompt, setPrompt] = useState(SCENARIOS[0].prompt)
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(SCENARIOS[0].id)
   const [result, setResult] = useState<DebugResponse | null>(null)
   const [activeStep, setActiveStep] = useState(0)
   const [autoPlaying, setAutoPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [resultPrompt, setResultPrompt] = useState('')
+  const [qasmOpen, setQasmOpen] = useState(false)
   const codeViewRef = useRef<HTMLDivElement>(null)
   const highlightedCodeRef = useRef<HTMLDivElement>(null)
 
@@ -456,6 +586,7 @@ function App() {
   const backendMode = result != null && steps.length === 0 && agents.some(
     (event) => event.stage === 'backend_selected',
   )
+  const selectedScenario = SCENARIOS.find((scenario) => scenario.id === selectedScenarioId)
 
   useEffect(() => {
     if (!autoPlaying || steps.length < 2) return
@@ -479,6 +610,7 @@ function App() {
     setResultPrompt('')
     setActiveStep(0)
     setAutoPlaying(false)
+    setQasmOpen(false)
     setLoading(true)
     setError('')
     try {
@@ -524,6 +656,9 @@ function App() {
   const highlightedLine = current
     ? executableLineIndex(qasm, Number(current.data.operation_index ?? -1))
     : -1
+  const currentStatement = highlightedLine >= 0
+    ? qasm.split('\n')[highlightedLine]?.trim() ?? ''
+    : ''
   const teachingStep = current && typeof current.data.operation_index === 'number'
     ? result?.teaching?.steps.find(
       (step) => step.operation_index === current.data.operation_index,
@@ -535,10 +670,15 @@ function App() {
   const circuitGoal = result?.teaching?.circuit_goal || resultPrompt
   const phaseOnly = current ? isPhaseOnlyChange(current) : false
 
+  function selectScenario(scenario: Scenario) {
+    setPrompt(scenario.prompt)
+    setSelectedScenarioId(scenario.id)
+  }
+
   useEffect(() => {
     const container = codeViewRef.current
     const target = highlightedCodeRef.current
-    if (!container || !target) return
+    if (!qasmOpen || !container || !target) return
     const containerRect = container.getBoundingClientRect()
     const targetRect = target.getBoundingClientRect()
     const nextTop = container.scrollTop
@@ -546,7 +686,7 @@ function App() {
       - containerRect.top
       - (container.clientHeight - targetRect.height) / 2
     container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
-  }, [activeStep, highlightedLine])
+  }, [activeStep, highlightedLine, qasmOpen])
 
   return (
     <main className="app-shell">
@@ -561,34 +701,39 @@ function App() {
         </div>
       </header>
 
-      <section className="request-section">
+      <section className={`request-section ${result ? 'result-mode' : loading ? 'loading-mode' : ''}`}>
         <form className="prompt-form" onSubmit={runDebug}>
           <span className="prompt-glyph">›_</span>
           <textarea
             aria-label="描述你的量子任务"
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={(event) => {
+              setPrompt(event.target.value)
+              setSelectedScenarioId(null)
+            }}
             onKeyDown={keyDown}
             rows={1}
             disabled={loading}
           />
           <button type="submit" disabled={loading || !prompt.trim()}>
-            <span>{loading ? '验证中' : '开始调试'}</span>
+            <span>{loading ? '验证中' : '生成并调试'}</span>
             {!loading && <kbd>⌘ ↵</kbd>}
           </button>
         </form>
-        <div className="example-row">
-          <span>试试示例</span>
-          {EXAMPLES.map((example, index) => (
-            <button key={example} onClick={() => setPrompt(example)} disabled={loading}>
-              <em>0{index + 1}</em>{example}
-            </button>
-          ))}
-        </div>
+        {!result && !loading && (
+          <ScenarioGrid selectedId={selectedScenarioId} onSelect={selectScenario} />
+        )}
+        {result && !backendMode && (
+          <details className="scenario-picker">
+            <summary>切换示例</summary>
+            <ScenarioGrid selectedId={selectedScenarioId} onSelect={selectScenario} />
+            {selectedScenario && <ScenarioContext scenario={selectedScenario} />}
+          </details>
+        )}
         {error && <div className="error-banner"><span>!</span>{error}</div>}
       </section>
 
-      {!result && <EmptyWorkspace loading={loading} />}
+      {!result && <EmptyWorkspace loading={loading} scenario={selectedScenario} />}
 
       {result && backendMode && (
         <div className="backend-layout">
@@ -601,9 +746,10 @@ function App() {
 
       {result && !backendMode && (
         <>
-          <section className="workspace">
+          <section className="workspace result-workspace">
             <aside className="sidebar panel">
               <div className="section-title"><span>CIRCUIT STEPS</span><em>{steps.length}</em></div>
+              <div className="verified-summary"><span>✓</span><p>已生成并通过 LoomQ 验证</p></div>
               <nav className="step-list" aria-label="电路步骤">
                 {steps.map((step, index) => (
                   <button
@@ -622,23 +768,25 @@ function App() {
                 {warnings.map((warning) => (
                   <div className="warning-step" key={warning.seq}>
                     <span>!</span><p>{warning.stage === 'statevector_skipped'
-                      ? '电路规模较大，当前教学调试器不展开 statevector；Agent 结果仍然有效。'
+                      ? '电路规模较大，当前教学调试器不展开 statevector；程序生成与验证结果仍然有效。'
                       : warning.summary}</p>
                   </div>
                 ))}
               </nav>
-              <SidebarProcess events={agents} />
             </aside>
 
-            <section className="code-panel panel">
+            <section className={`code-panel panel ${qasmOpen ? 'qasm-open' : ''}`}>
               {current ? (
                 <>
                   <div className="current-operation">
                     <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
                     <div className="operation-copy">
                       <div>
-                        <span className="eyebrow">当前操作 · 第 {activeStep} 步</span>
+                        <span className="eyebrow">当前操作 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
                         <h2>{stepTitle(current)}</h2>
+                        {current.stage !== 'initial_state' && currentStatement && (
+                          <code className="current-statement">{currentStatement}</code>
+                        )}
                       </div>
                       <div className="purpose-copy">
                         <span>为什么这里需要它？</span>
@@ -672,23 +820,29 @@ function App() {
                     </div>
                   </div>
                   <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
-                  <div className="editor-chrome">
-                    <div className="editor-tab"><span className="qasm-icon">Q</span>circuit.qasm <i /></div>
-                    <div className="editor-actions"><span>OPENQASM 2.0</span><span>只读</span></div>
-                  </div>
-                  <div className="code-view" ref={codeViewRef} role="region" aria-label="OpenQASM 程序">
-                    {qasm.split('\n').map((line, index) => (
-                      <div
-                        className={`code-line ${index === highlightedLine ? 'highlighted' : ''}`}
-                        key={`${index}-${line}`}
-                        ref={index === highlightedLine ? highlightedCodeRef : undefined}
-                      >
-                        <span className="line-number">{index + 1}</span>
-                        <code>{line || ' '}</code>
-                        {index === highlightedLine && <span className="execution-marker">▶</span>}
-                      </div>
-                    ))}
-                  </div>
+                  <details
+                    className="qasm-disclosure"
+                    open={qasmOpen}
+                    onToggle={(event) => setQasmOpen(event.currentTarget.open)}
+                  >
+                    <summary>
+                      <span><b className="qasm-icon">Q</b>{qasmOpen ? '收起完整 QASM' : '查看完整 QASM'}</span>
+                      <small>OPENQASM 2.0 · 只读</small>
+                    </summary>
+                    <div className="code-view" ref={codeViewRef} role="region" aria-label="完整 OpenQASM 程序">
+                      {qasm.split('\n').map((line, index) => (
+                        <div
+                          className={`code-line ${index === highlightedLine ? 'highlighted' : ''}`}
+                          key={`${index}-${line}`}
+                          ref={index === highlightedLine ? highlightedCodeRef : undefined}
+                        >
+                          <span className="line-number">{index + 1}</span>
+                          <code>{line || ' '}</code>
+                          {index === highlightedLine && <span className="execution-marker">▶</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 </>
               ) : (
                 <div className="panel-empty">没有可回放的 Circuit Trace。</div>
