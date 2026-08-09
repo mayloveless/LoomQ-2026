@@ -60,7 +60,7 @@ export const SCENARIOS: Scenario[] = [
     id: 'search',
     tag: 'SEARCH',
     title: '怎样让目标答案更容易被找到？',
-    prompt: '设计一个搜索的电路',
+    prompt: '设计一个 2 比特 Grover 搜索电路，搜索目标为 |11>。先创建均匀叠加，再实现标记 |11> 的 Oracle 和扩散算子，最后测量；请使用 OpenQASM 2.0 基础门展开，不定义自定义 gate。',
     ordinary: '普通搜索通常逐项检查候选，直到找到符合条件的答案。',
     quantum: '量子版本先组合多个候选，再用干涉改变它们被测到的机会。',
     focus: '观察叠加、条件操作和测量如何组成一次搜索尝试。',
