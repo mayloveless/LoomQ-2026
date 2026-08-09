@@ -19,18 +19,18 @@ DEFAULT_MAX_TRACE_QUBITS = 8
 STATE_AMPLITUDE_EPSILON = 1e-10
 
 _GATE_DESCRIPTIONS = {
-    "h": "H redistributes amplitudes so computational states can superpose and interfere.",
-    "x": "X swaps the amplitudes of the |0> and |1> states for this qubit.",
-    "s": "S adds a quarter-turn phase without changing basis probabilities.",
-    "sdg": "Sdg removes a quarter-turn phase without changing basis probabilities.",
-    "t": "T adds an eighth-turn phase without changing basis probabilities.",
-    "tdg": "Tdg removes an eighth-turn phase without changing basis probabilities.",
-    "ry": "RY rotates amplitudes between |0> and |1> around the Y axis.",
-    "rz": "RZ changes relative phase around the Z axis without directly changing probabilities.",
-    "cx": "CX flips the target when the control is 1, changing correlations between qubits.",
-    "cu1": "CU1 adds phase when both control and target are 1.",
-    "swap": "SWAP exchanges the quantum states carried by two qubits.",
-    "ccx": "CCX flips the target when both controls are 1.",
+    "h": "H 门：把振幅重新分配到多个基态，使量子位进入叠加。",
+    "x": "X 门：交换这个量子位在 |0> 与 |1> 上的振幅。",
+    "s": "S 门：增加四分之一圈相位，不直接改变基态测量概率。",
+    "sdg": "Sdg 门：减少四分之一圈相位，不直接改变基态测量概率。",
+    "t": "T 门：增加八分之一圈相位，不直接改变基态测量概率。",
+    "tdg": "Tdg 门：减少八分之一圈相位，不直接改变基态测量概率。",
+    "ry": "RY 门：绕 Y 轴旋转，在 |0> 与 |1> 之间重新分配振幅。",
+    "rz": "RZ 门：改变相对相位，通常不会立刻改变测量概率。",
+    "cx": "CX 门：当控制位为 1 时翻转目标位，因此改变两个量子位之间的关联。",
+    "cu1": "CU1 门：当控制位和目标位都为 1 时增加相位。",
+    "swap": "SWAP 门：交换两个量子位承载的量子状态。",
+    "ccx": "CCX 门：当两个控制位都为 1 时翻转目标位。",
 }
 
 
@@ -112,7 +112,7 @@ def trace_circuit(
             stage="statevector_skipped",
             executor="local",
             status="warning",
-            summary="Circuit state visualization skipped because it exceeds the debug limit.",
+            summary="电路超过调试上限，已跳过 statevector 可视化。",
             data={"qubit_count": qubit_count, "max_qubits": max_qubits},
         )
         return trace_sink.events[start_seq:]
@@ -143,8 +143,8 @@ def trace_circuit(
                 stage="gate_step",
                 executor="local",
                 status="ok",
-                summary="Applied %s to %s."
-                % (operation.name, ", ".join(map(_qubit_label, operation.qubits))),
+                summary="已对 %s 执行 %s 门。"
+                % (", ".join(map(_qubit_label, operation.qubits)), operation.name.upper()),
                 data={
                     "operation_index": operation_index,
                     "gate": operation.name,
@@ -154,7 +154,7 @@ def trace_circuit(
                     "state_after": state_after,
                     "probabilities_after": _probabilities(state_after),
                     "gate_description": _GATE_DESCRIPTIONS.get(
-                        operation.name, "This gate updates the quantum state."
+                        operation.name, "该量子门会更新当前量子状态。"
                     ),
                 },
             )
@@ -165,17 +165,38 @@ def trace_circuit(
                 stage="measurement",
                 executor="local",
                 status="ok",
-                summary="Measurement maps quantum bits to classical bits.",
+                summary="测量把量子位映射到经典位。",
                 data={
                     "operation_index": operation_index,
                     "mappings": _measurement_mappings(circuit, operation),
                     "probabilities_before": _probabilities(state_before),
                     "gate_description": (
-                        "Measure reads a classical result from the current probability "
-                        "distribution; this trace does not fabricate an outcome."
+                        "测量：按当前概率分布把量子信息读成经典 0/1；"
+                        "这里不会伪造一次随机结果。"
                     ),
                 },
             )
+            remaining_gate_count = sum(
+                isinstance(remaining, GateOperation)
+                for remaining in circuit.operations[operation_index + 1 :]
+            )
+            if remaining_gate_count:
+                trace_sink.emit(
+                    layer="circuit",
+                    stage="trace_stopped_after_measurement",
+                    executor="local",
+                    status="warning",
+                    summary=(
+                        "⚠ 检测到中途测量；测量后状态会按随机结果分支，"
+                        "当前调试器停止后续状态追踪。QASM 和 Agent 结果不受影响。"
+                    ),
+                    data={
+                        "measurement_operation_index": operation_index,
+                        "remaining_gate_count": remaining_gate_count,
+                        "reason": "mid_circuit_measurement",
+                    },
+                )
+                break
     return trace_sink.events[start_seq:]
 
 

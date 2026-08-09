@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 from loomq.circuit_trace import STATE_AMPLITUDE_EPSILON, trace_circuit
+from loomq.debug_cli import render_event
 from loomq.debug_trace import TraceRecorder
 from loomq.parser import parse_qasm
 
@@ -58,6 +59,9 @@ class CircuitTraceStatevectorTests(unittest.TestCase):
         self.assertAlmostEqual(final_state["1"]["imag"], 2 ** -0.5)
         self.assertAlmostEqual(final_state["0"]["probability"], 0.5)
         self.assertAlmostEqual(final_state["1"]["probability"], 0.5)
+        rendered = render_event(recorder.events[-1])
+        self.assertIn("+0.000000+0.707107i", rendered)
+        self.assertIn("██████████░░░░░░░░░░", rendered)
 
     def test_bit_order_matches_q0_to_qn(self):
         circuit = parse_qasm(qasm(2, "x q[0];"))
@@ -97,7 +101,57 @@ class CircuitTraceStatevectorTests(unittest.TestCase):
             ],
         )
         self.assertNotIn("outcome", measurement.data)
-        self.assertIn("does not fabricate", measurement.data["gate_description"])
+        self.assertIn("不会伪造", measurement.data["gate_description"])
+        self.assertNotIn("trace_stopped_after_measurement", [
+            event.stage for event in recorder.events
+        ])
+
+    def test_primary_gate_and_measurement_descriptions_are_chinese(self):
+        circuit = parse_qasm(
+            qasm(
+                2,
+                "h q[0];\ncx q[0],q[1];\nrz(pi/2) q[1];\nmeasure q -> c;",
+                classical=True,
+            )
+        )
+        recorder = TraceRecorder()
+
+        trace_circuit(circuit, recorder)
+
+        descriptions = {
+            event.data.get("gate", "measurement"): event.data["gate_description"]
+            for event in recorder.events
+            if event.stage in ("gate_step", "measurement")
+        }
+        self.assertIn("H 门", descriptions["h"])
+        self.assertIn("CX 门", descriptions["cx"])
+        self.assertIn("RZ 门", descriptions["rz"])
+        self.assertIn("测量", descriptions["measurement"])
+
+    def test_mid_circuit_measurement_emits_warning_and_stops_gate_trace(self):
+        circuit = parse_qasm(
+            qasm(
+                1,
+                "h q[0];\nmeasure q[0] -> c[0];\nx q[0];",
+                classical=True,
+            )
+        )
+        recorder = TraceRecorder()
+
+        trace_circuit(circuit, recorder)
+
+        self.assertEqual(
+            [event.stage for event in recorder.events],
+            ["gate_step", "measurement", "trace_stopped_after_measurement"],
+        )
+        warning = recorder.events[-1]
+        self.assertEqual(warning.status, "warning")
+        self.assertEqual(warning.data["measurement_operation_index"], 1)
+        self.assertEqual(warning.data["remaining_gate_count"], 1)
+        self.assertEqual(warning.data["reason"], "mid_circuit_measurement")
+        self.assertNotIn(
+            "x", [event.data.get("gate") for event in recorder.events]
+        )
 
 
 class CircuitTraceLimitTests(unittest.TestCase):

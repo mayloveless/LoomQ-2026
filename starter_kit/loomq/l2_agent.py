@@ -286,7 +286,7 @@ def _verify_candidate(
             stage="parser_validation",
             executor="local",
             status="error",
-            summary="Candidate QASM failed local Parser validation.",
+            summary="候选 QASM 未通过本地语法校验。",
             data={"diagnostic": exc.diagnostic},
         )
         raise _CandidateVerificationError(exc.diagnostic) from None
@@ -296,7 +296,7 @@ def _verify_candidate(
         stage="parser_validation",
         executor="local",
         status="ok",
-        summary="Candidate QASM passed Parser and L2 structure validation.",
+        summary="候选 QASM 已通过语法和 L2 结构校验。",
         data={"require_measurement": require_measurement},
     )
 
@@ -309,7 +309,7 @@ def _verify_candidate(
             stage="semantic_verification",
             executor="local",
             status="error",
-            summary="Local statevector semantic verification could not complete.",
+            summary="本地 statevector 语义验证未能完成。",
             data={"diagnostic": "local statevector verification failed"},
         )
         raise _CandidateVerificationError(
@@ -326,7 +326,7 @@ def _verify_candidate(
             stage="semantic_verification",
             executor="local",
             status="error",
-            summary="Candidate QASM did not match the independent target.",
+            summary="候选 QASM 与独立目标态不一致。",
             data={
                 "mode": verification.mode,
                 "fidelity": fidelity,
@@ -341,7 +341,7 @@ def _verify_candidate(
         stage="semantic_verification",
         executor="local",
         status="ok",
-        summary="Candidate QASM passed deterministic semantic verification.",
+        summary="候选 QASM 已通过本地确定性语义验证。",
         data={
             "mode": verification.mode,
             "fidelity": verification.fidelity,
@@ -484,7 +484,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         stage="intent",
         executor="llm",
         status="ok",
-        summary="The model classified the requested L2 task.",
+        summary="模型已识别用户请求的任务类型。",
         data={"task_type": task_type, "llm_call": 1},
     )
     if payload.get("task_type") == "select_backend":
@@ -502,7 +502,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             stage="backend_constraints",
             executor="llm",
             status="ok",
-            summary="The model extracted backend constraints without selecting an ID.",
+            summary="模型已提取后端约束，尚未选择具体后端。",
             data={**constraint_data, "llm_call": 1},
         )
         matches = select_backends(constraints)
@@ -513,9 +513,9 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             executor="local",
             status="ok" if matches else "warning",
             summary=(
-                "Local capability filtering selected canonical backend IDs."
+                "本地能力表已筛选出符合条件的标准后端 ID。"
                 if matches
-                else "No backend satisfies every extracted constraint."
+                else "本地能力表中没有同时满足全部约束的后端。"
             ),
             data={"backend_ids": backend_ids, "no_match": not bool(matches)},
         )
@@ -525,7 +525,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             stage="agent_result",
             executor="local",
             status="ok",
-            summary="Backend selection completed.",
+            summary="后端选择已完成。",
             data={"task_type": "select_backend", "backend_ids": backend_ids},
         )
         return reply
@@ -538,7 +538,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         stage="qasm_candidate",
         executor="llm",
         status="ok",
-        summary="The model produced an OpenQASM candidate.",
+        summary="模型已生成候选 OpenQASM 程序。",
         data={
             "task_type": candidate.task_type,
             "qasm": candidate.qasm,
@@ -560,7 +560,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         stage="target_spec",
         executor="llm",
         status="ok",
-        summary="An independent model call extracted the verification target.",
+        summary="独立目标裁判已提取待验证的目标态。",
         data={**target_trace_data, "llm_call": 2},
     )
     if pure_state_guard and target.verification_mode == "unsupported":
@@ -582,7 +582,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             stage="repair_started",
             executor="llm",
             status="running",
-            summary="One bounded model repair was requested.",
+            summary="候选未通过验证，开始唯一一次模型修复。",
             data={
                 "llm_call": 3,
                 "diagnostic": first_error.diagnostic,
@@ -610,7 +610,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             stage="repair_candidate",
             executor="llm",
             status="ok",
-            summary="The model returned its single repair candidate.",
+            summary="模型已返回修复后的候选 QASM。",
             data={
                 "task_type": repaired_candidate.task_type,
                 "qasm": repaired_candidate.qasm,
@@ -636,7 +636,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         stage="agent_result",
         executor="local",
         status="ok",
-        summary="A validated OpenQASM result is ready.",
+        summary="最终 OpenQASM 已通过验证，可以使用。",
         data={
             "task_type": generated.task_type,
             "qasm": generated.qasm,
