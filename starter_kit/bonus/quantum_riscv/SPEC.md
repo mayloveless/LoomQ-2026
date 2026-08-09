@@ -95,8 +95,15 @@ measure q[n] -> c[k];
 
 ## 8. 可复现证据
 
+`bonus/quantum_riscv/emulator.py` 中的 `QuantumRISCVEmulator` 直接继承官方
+`TinyRISCVEmulator`，复用其 parser、寄存器、标签与状态初始化；仅 fork 官方取指循环，
+在原七条经典指令语义旁增加 `.word` custom-0 的严格解码和协处理器派发。经典路径由
+同一组程序在官方类与扩展类间做 differential tests，避免复制逻辑发生无证据漂移。
+
 ```bash
 python -m unittest starter_kit.tests.test_quantum_riscv_bonus -v
 ```
 
-测试覆盖 bit-exact encoding、严格非法字段、官方经典指令兼容、QMEAS 写回后 `beq`/`bne` 分支，以及 `quantum_ops -> words -> emulator -> coprocessor trace` 端到端链路。
+测试覆盖 bit-exact encoding、独立手构 word、严格非法字段、官方经典指令 differential、
+QMEAS 写回后 `beq`/`bne` 分支，以及
+`quantum_ops -> words -> emulator -> coprocessor trace` 端到端链路。

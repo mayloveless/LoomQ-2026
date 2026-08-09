@@ -14,6 +14,7 @@ try:
         encode_qh,
         encode_qmeas,
         encode_qx,
+        format_instruction,
         quantum_ops_to_words,
     )
     from starter_kit.loomq.l3 import compile_hybrid_source
@@ -33,6 +34,7 @@ except ModuleNotFoundError as error:
         encode_qh,
         encode_qmeas,
         encode_qx,
+        format_instruction,
         quantum_ops_to_words,
     )
     from loomq.l3 import compile_hybrid_source
@@ -67,6 +69,30 @@ class QuantumEncodingTests(unittest.TestCase):
                 self.assertGreaterEqual(word, 0)
                 self.assertLessEqual(word, 0xFFFFFFFF)
 
+    def test_independently_constructed_word_and_formatter(self):
+        # 不调用 production encoder：按字段手工拼出 QCX q[3], q[17]。
+        manual_word = (
+            (0 << 25)
+            | (17 << 20)
+            | (3 << 15)
+            | (2 << 12)
+            | (0 << 7)
+            | 0x0B
+        )
+        self.assertEqual(0x0111A00B, manual_word)
+        instruction = decode_quantum_instruction(manual_word)
+        self.assertEqual(QuantumInstruction("QCX", 3, q1=17), instruction)
+        self.assertEqual("QCX q[3], q[17]", format_instruction(instruction))
+
+        formatted = (
+            (QuantumInstruction("QH", 5), "QH q[5]"),
+            (QuantumInstruction("QX", 31), "QX q[31]"),
+            (QuantumInstruction("QMEAS", 7, rd=10), "QMEAS q[7] -> x10"),
+        )
+        for command, expected in formatted:
+            with self.subTest(command=command):
+                self.assertEqual(expected, format_instruction(command))
+
     def test_encoder_rejects_invalid_operands(self):
         for value in (-1, 32):
             with self.subTest(qubit=value):
@@ -91,6 +117,17 @@ class QuantumEncodingTests(unittest.TestCase):
         for word in (-1, 1 << 32):
             with self.assertRaises(QuantumInstructionError):
                 decode_quantum_instruction(word)
+        for word in (True, 1.0, "0x0000000B"):
+            with self.subTest(word=word):
+                with self.assertRaises(TypeError):
+                    decode_quantum_instruction(word)
+
+    def test_decoder_does_not_claim_standard_riscv_words(self):
+        # ADDI、JAL、BEQ 的标准 opcode 不能被误识别为 custom-0。
+        for word in (0x00000013, 0x0000006F, 0x00000063):
+            with self.subTest(word="0x%08x" % word):
+                with self.assertRaisesRegex(QuantumInstructionError, "opcode"):
+                    decode_quantum_instruction(word)
 
     def test_decoder_rejects_nonzero_reserved_fields(self):
         invalid_words = (
@@ -124,9 +161,19 @@ class QuantumTranslatorTests(unittest.TestCase):
             quantum_ops_to_words(["h q[0];", "rz(pi / 2) q[0];"])
 
     def test_classical_mapping_range_is_enforced(self):
-        self.assertEqual([encode_qmeas(31, 31)], quantum_ops_to_words(["measure q[31] -> c[21];"]))
+        self.assertEqual(
+            [encode_qmeas(31, 31)],
+            quantum_ops_to_words(["measure q[31] -> c[21];"]),
+        )
         with self.assertRaises(QuantumInstructionError):
             quantum_ops_to_words(["measure q[0] -> c[22];"])
+
+    def test_quantum_mapping_range_is_enforced(self):
+        self.assertEqual([encode_qh(31)], quantum_ops_to_words(["h q[31];"]))
+        for operation in ("h q[32];", "cx q[0], q[32];", "measure q[32] -> c[0];"):
+            with self.subTest(operation=operation):
+                with self.assertRaises(QuantumInstructionError):
+                    quantum_ops_to_words([operation])
 
 
 class QuantumEmulatorTests(unittest.TestCase):
@@ -136,27 +183,92 @@ class QuantumEmulatorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     TraceCoprocessor([invalid])
 
-    def test_classical_program_matches_official_emulator(self):
-        program = """
-        li x1, 5
-        li x2, 8
-        add x3, x1, x2
-        bne x1, x2, DIFFERENT
-        li x4, 99
-        DIFFERENT:
-        sub x4, x2, x1
-        addi x4, x4, 7
-        beq x4, x2, END
-        li x5, 99
-        END:
-        addi x6, x0, 1
-        """
+    def test_classical_programs_match_official_emulator(self):
+        programs = {
+            "alu_negative_x0": """
+                li x0, 99
+                li x1, -7
+                addi x2, x1, -5
+                sub x3, x0, x2
+                add x4, x1, x3
+            """,
+            "beq_taken_bne_not_taken": """
+                li x1, -4
+                li x2, -4
+                beq x1, x2, A
+                li x3, 91
+                A: bne x1, x2, B
+                addi x3, x0, 7
+                B: addi x4, x3, 1
+            """,
+            "beq_not_taken_bne_taken": """
+                li x1, 2
+                li x2, 3
+                beq x1, x2, BAD
+                bne x1, x2, OK
+                BAD: li x3, 99
+                OK: addi x3, x0, -8
+            """,
+            "jump_and_multiple_labels": """
+                li x1, 1
+                j SECOND
+                FIRST: li x2, 80
+                j END
+                SECOND: addi x1, x1, 2
+                j FIRST
+                END: add x3, x1, x2
+            """,
+            "sequential_branches": """
+                li x1, 3
+                li x2, 3
+                beq x1, x2, SAME
+                li x3, 99
+                SAME: addi x2, x2, 1
+                bne x1, x2, DIFFERENT
+                li x4, 99
+                DIFFERENT: sub x5, x2, x1
+            """,
+        }
+        for name, program in programs.items():
+            with self.subTest(name=name):
+                official = TinyRISCVEmulator()
+                official.load_program(program)
+                extended = QuantumRISCVEmulator(TraceCoprocessor())
+                extended.load_program(program)
+
+                self.assertEqual(official.execute(), extended.execute())
+                self.assertEqual(official.registers, extended.registers)
+                self.assertEqual(official.pc, extended.pc)
+                self.assertEqual(official.labels, extended.labels)
+                self.assertEqual([], extended.quantum_trace)
+
+    def test_classical_loop_limit_matches_official_emulator(self):
         official = TinyRISCVEmulator()
-        official.load_program(program)
         extended = QuantumRISCVEmulator(TraceCoprocessor())
-        extended.load_program(program)
+        for emulator in (official, extended):
+            emulator.max_steps = 7
+            emulator.load_program("LOOP: j LOOP")
+
+        for emulator in (official, extended):
+            with self.assertRaisesRegex(RuntimeError, "最大步数"):
+                emulator.execute()
+        self.assertEqual(official.pc, extended.pc)
+        self.assertEqual(official.registers, extended.registers)
+
+    def test_classical_repeat_execute_and_reload_match_official(self):
+        program = "li x1, 4\naddi x1, x1, 3"
+        official = TinyRISCVEmulator()
+        extended = QuantumRISCVEmulator(TraceCoprocessor())
+        for emulator in (official, extended):
+            emulator.load_program(program)
+
         self.assertEqual(official.execute(), extended.execute())
-        self.assertEqual([], extended.quantum_trace)
+        self.assertEqual(official.execute(), extended.execute())
+
+        for emulator in (official, extended):
+            emulator.load_program("addi x2, x0, -9")
+        self.assertEqual(official.execute(), extended.execute())
+        self.assertEqual(official.registers, extended.registers)
 
     def test_measurement_writeback_controls_beq_and_bne(self):
         measurement_word = encode_qmeas(3, 10)
@@ -211,6 +323,84 @@ class QuantumEmulatorTests(unittest.TestCase):
                 emulator.load_program(".word 0x%08X" % encode_qmeas(0, 10))
                 with self.assertRaisesRegex(ValueError, "measurement"):
                     emulator.execute()
+
+    def test_malformed_and_reserved_words_fail_fast(self):
+        cases = (
+            (".word", ValueError),
+            (".word 0x0000000B 0x0000000B", ValueError),
+            (".word not-a-number", ValueError),
+            (".word -1", QuantumInstructionError),
+            (".word 0x100000000", QuantumInstructionError),
+            (".word 0x0200000B", QuantumInstructionError),
+            (".word 0x0000400B", QuantumInstructionError),
+        )
+        for program, error_type in cases:
+            with self.subTest(program=program):
+                emulator = QuantumRISCVEmulator(TraceCoprocessor())
+                emulator.load_program(program)
+                with self.assertRaises(error_type):
+                    emulator.execute()
+
+    def test_dispatch_order_and_multiple_measurements(self):
+        # 固定 raw words 验证真实 decoder 路径和测量值的顺序消费。
+        program = """
+            .word 0x0000000B
+            .word 0x0000100B
+            .word 0x0010200B
+            .word 0x0000350B
+            .word 0x0000B58B
+        """
+        backend = TraceCoprocessor([1, 0])
+        emulator = QuantumRISCVEmulator(backend)
+        emulator.load_program(program)
+        state = emulator.execute()
+
+        expected = [
+            QuantumInstruction("QH", 0),
+            QuantumInstruction("QX", 0),
+            QuantumInstruction("QCX", 0, q1=1),
+            QuantumInstruction("QMEAS", 0, rd=10),
+            QuantumInstruction("QMEAS", 1, rd=11),
+        ]
+        self.assertEqual(expected, backend.trace)
+        self.assertEqual(expected, emulator.quantum_trace)
+        self.assertEqual(1, state["x10"])
+        self.assertNotIn("x11", state)
+
+    def test_classical_branch_can_skip_and_reach_quantum_words(self):
+        program = """
+            li x1, 0
+            beq x1, x0, AFTER_SKIPPED
+            .word 0x0000100B
+            AFTER_SKIPPED:
+            .word 0x0000000B
+            bne x1, x0, END
+            .word 0x0010200B
+            END:
+            addi x2, x0, 7
+        """
+        backend = TraceCoprocessor()
+        emulator = QuantumRISCVEmulator(backend)
+        emulator.load_program(program)
+        state = emulator.execute()
+
+        self.assertEqual(
+            [
+                QuantumInstruction("QH", 0),
+                QuantumInstruction("QCX", 0, q1=1),
+            ],
+            backend.trace,
+        )
+        self.assertEqual(7, state["x2"])
+
+    def test_same_quantum_program_is_deterministic_with_same_measurement(self):
+        program = ".word 0x0000350B\naddi x1, x10, 9"
+        outcomes = []
+        for _ in range(2):
+            emulator = QuantumRISCVEmulator(TraceCoprocessor([1]))
+            emulator.load_program(program)
+            outcomes.append((emulator.execute(), list(emulator.quantum_trace)))
+        self.assertEqual(outcomes[0], outcomes[1])
 
 
 class QuantumRISCVE2ETests(unittest.TestCase):

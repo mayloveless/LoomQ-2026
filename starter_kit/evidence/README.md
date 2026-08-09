@@ -11,7 +11,7 @@
 - [x] L1 真机
 - [ ] L2 交互体验
 - [x] 工程与产品化
-- [ ] 自定义量子 RISC-V Bonus
+- [x] 自定义量子 RISC-V Bonus
 - [ ] 新手引导与视觉叙事 Bonus
 
 ## L1 真机
@@ -89,9 +89,9 @@ shots：平台导出结果未提供离散 shots，仅提供归一化概率分布
 以下三项必须齐全且测试通过，才获得 8 分：
 
 ```text
-指令编码规格：[填写文档路径]
-模拟器扩展实现：[填写代码路径]
-端到端测试命令：[填写命令或文档路径]
+指令编码规格：starter_kit/bonus/quantum_riscv/SPEC.md
+模拟器扩展实现：starter_kit/bonus/quantum_riscv/emulator.py（`QuantumRISCVEmulator` 继承官方 `TinyRISCVEmulator`，复用 parser/寄存器/标签语义，并在 fork 的取指循环中增加 `.word` custom-0 解码与量子协处理器派发）
+端到端测试命令：python -m unittest starter_kit.tests.test_quantum_riscv_bonus -v
 ```
 
 ## 新手引导与视觉叙事 Bonus
