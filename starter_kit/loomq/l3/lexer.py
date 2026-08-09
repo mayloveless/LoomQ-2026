@@ -1,5 +1,6 @@
 """Hybrid-QASM lexer，保留足够位置信息用于确定性报错。"""
 
+import re
 from dataclasses import dataclass
 from typing import List
 
@@ -14,6 +15,9 @@ class Token:
     value: str
     line: int
     column: int
+
+
+_NUMBER_RE = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 
 
 def tokenize(source: str) -> List[Token]:
@@ -72,12 +76,16 @@ def tokenize(source: str) -> List[Token]:
             index = end
             continue
 
-        if char.isdigit():
-            end = index + 1
-            while end < length and source[end].isdigit():
-                end += 1
+        if char.isdigit() or (
+            char == "." and index + 1 < length and source[index + 1].isdigit()
+        ):
+            # 量子门参数允许小数和科学计数法；经典文法仍只接受 INTEGER。
+            match = _NUMBER_RE.match(source, index)
+            assert match is not None
+            end = match.end()
             value = source[index:end]
-            tokens.append(Token("INTEGER", value, token_line, token_column))
+            kind = "INTEGER" if value.isdigit() else "NUMBER"
+            tokens.append(Token(kind, value, token_line, token_column))
             advance(value)
             index = end
             continue

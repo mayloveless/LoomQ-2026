@@ -136,7 +136,7 @@ class HybridParser:
 
     def validate_openqasm(self, tokens: Sequence[Token]) -> None:
         values = [token.value for token in tokens]
-        if values != ["OPENQASM", "2", ".", "0"]:
+        if values != ["OPENQASM", "2.0"]:
             raise self.error("expected exact 'OPENQASM 2.0;' declaration", tokens[0])
 
     def record_creg(self, tokens: Sequence[Token]) -> None:
