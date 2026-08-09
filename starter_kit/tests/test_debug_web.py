@@ -8,6 +8,7 @@ from unittest import mock
 
 from loomq.debug_trace import TraceRecorder
 from loomq.debug_web import DebugRequestHandler, build_debug_payload
+from loomq.teaching_explainer import TeachingExplanation, TeachingStep
 
 
 class DebugWebSerializationTests(unittest.TestCase):
@@ -23,12 +24,82 @@ class DebugWebSerializationTests(unittest.TestCase):
         )
         builder = mock.Mock(return_value=("reply", (event,)))
 
-        payload = build_debug_payload("Bell", debug_builder=builder)
+        explainer = mock.Mock(return_value=None)
+        payload = build_debug_payload(
+            "Bell", debug_builder=builder, teaching_explainer=explainer
+        )
 
         builder.assert_called_once_with("Bell")
         self.assertEqual(payload["reply"], "reply")
         self.assertEqual(payload["events"][0], event.as_dict())
+        self.assertIsNone(payload["teaching"])
+        explainer.assert_not_called()
         json.dumps(payload, ensure_ascii=False)
+
+    def test_explainer_receives_only_final_validated_qasm_and_real_circuit(self):
+        recorder = TraceRecorder()
+        recorder.emit(
+            layer="agent",
+            stage="qasm_candidate",
+            executor="llm",
+            status="ok",
+            summary="candidate",
+            data={"qasm": "UNVALIDATED"},
+        )
+        recorder.emit(
+            layer="agent",
+            stage="agent_result",
+            executor="local",
+            status="ok",
+            summary="final",
+            data={"qasm": "OPENQASM 2.0;\nqreg q[1];"},
+        )
+        circuit_event = recorder.emit(
+            layer="circuit",
+            stage="gate_step",
+            executor="local",
+            status="ok",
+            summary="H",
+            data={"operation_index": 0, "gate": "h"},
+        )
+        builder = mock.Mock(return_value=("verified reply", recorder.events))
+        explanation = TeachingExplanation(
+            circuit_goal="目标",
+            steps=(TeachingStep(0, "目的", None, None),),
+        )
+        explainer = mock.Mock(return_value=explanation)
+
+        payload = build_debug_payload(
+            "prompt", debug_builder=builder, teaching_explainer=explainer
+        )
+
+        explainer.assert_called_once_with(
+            "prompt", "OPENQASM 2.0;\nqreg q[1];", (circuit_event,)
+        )
+        self.assertEqual(payload["reply"], "verified reply")
+        self.assertEqual(payload["teaching"]["steps"][0]["purpose"], "目的")
+
+    def test_explainer_failure_does_not_change_verified_reply_or_events(self):
+        recorder = TraceRecorder()
+        recorder.emit(
+            layer="agent",
+            stage="agent_result",
+            executor="local",
+            status="ok",
+            summary="final",
+            data={"qasm": "OPENQASM 2.0; // FINAL"},
+        )
+        expected_events = [event.as_dict() for event in recorder.events]
+
+        payload = build_debug_payload(
+            "prompt",
+            debug_builder=mock.Mock(return_value=("verified reply", recorder.events)),
+            teaching_explainer=mock.Mock(side_effect=RuntimeError("failed")),
+        )
+
+        self.assertEqual(payload["reply"], "verified reply")
+        self.assertEqual(payload["events"], expected_events)
+        self.assertIsNone(payload["teaching"])
 
 
 class DebugWebHTTPTests(unittest.TestCase):

@@ -13,6 +13,19 @@ export interface TraceEvent {
 export interface DebugResponse {
   reply: string
   events: TraceEvent[]
+  teaching: TeachingExplanation | null
+}
+
+export interface TeachingStep {
+  operation_index: number
+  purpose: string
+  concept: string | null
+  concept_explanation: string | null
+}
+
+export interface TeachingExplanation {
+  circuit_goal: string
+  steps: TeachingStep[]
 }
 
 export interface StateEntry {

@@ -3,6 +3,7 @@ import type {
   DebugResponse,
   MeasurementMapping,
   StateEntry,
+  TeachingStep,
   TraceEvent,
 } from './types'
 import {
@@ -12,6 +13,7 @@ import {
   executableLineIndex,
   extractQasm,
   latestBackendIds,
+  isPhaseOnlyChange,
   stateForStep,
   stepTitle,
 } from './viewModel'
@@ -84,6 +86,15 @@ function ProbabilityComparison({ event }: { event: TraceEvent }) {
       : []
   })
 
+  if (event.stage === 'initial_state') {
+    return (
+      <div className="initial-probability">
+        <span className="comparison-label">程序执行前</span>
+        <ProbabilityRows entries={after} />
+      </div>
+    )
+  }
+
   if (event.stage === 'measurement') {
     return (
       <>
@@ -110,7 +121,7 @@ function ProbabilityComparison({ event }: { event: TraceEvent }) {
           <code key={change.basis}>
             |{change.basis}› {formatPercent(change.previous)} → {formatPercent(change.current)}
           </code>
-        )) : <code>测量概率没有变化，相位可能已经改变</code>}
+        )) : <code>{isPhaseOnlyChange(event) ? '概率未变 · 相位已变化' : '状态概率没有变化'}</code>}
       </div>
     </div>
   )
@@ -328,6 +339,17 @@ function TechnicalDetails({ event, state }: { event: TraceEvent; state: StateEnt
   )
 }
 
+export function ConceptCard({ step }: { step?: TeachingStep }) {
+  if (!step?.concept || !step.concept_explanation) return null
+  return (
+    <div className="concept-card">
+      <span>💡 当前概念</span>
+      <strong>{step.concept}</strong>
+      <p>{step.concept_explanation}</p>
+    </div>
+  )
+}
+
 function SidebarProcess({ events }: { events: TraceEvent[] }) {
   return (
     <details className="sidebar-process" open>
@@ -393,7 +415,7 @@ function BackendResult({ events, reply }: { events: TraceEvent[]; reply: string 
   )
 }
 
-function EmptyWorkspace() {
+function EmptyWorkspace({ loading = false }: { loading?: boolean }) {
   return (
     <div className="workspace empty-workspace">
       <div className="empty-rail panel">
@@ -403,10 +425,12 @@ function EmptyWorkspace() {
         <div className="skeleton-line short" />
       </div>
       <div className="empty-main panel">
-        <div className="empty-icon">⌁</div>
-        <h2>准备开始一次量子调试</h2>
-        <p>选择示例或描述目标，LoomQ 会生成、验证并拆解每一步电路状态。</p>
-        <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 开始调试</span>
+        <div className={`empty-icon ${loading ? 'loading' : ''}`}>⌁</div>
+        <h2>{loading ? '正在生成新的量子电路' : '准备开始一次量子调试'}</h2>
+        <p>{loading
+          ? '完成生成与验证后，这里会展示本次请求对应的 Circuit Trace。'
+          : '选择示例或描述目标，LoomQ 会生成、验证并拆解每一步电路状态。'}</p>
+        {!loading && <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 开始调试</span>}
       </div>
     </div>
   )
@@ -419,6 +443,7 @@ function App() {
   const [autoPlaying, setAutoPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [resultPrompt, setResultPrompt] = useState('')
   const codeViewRef = useRef<HTMLDivElement>(null)
   const highlightedCodeRef = useRef<HTMLDivElement>(null)
 
@@ -447,18 +472,25 @@ function App() {
 
   async function runDebug(event?: FormEvent) {
     event?.preventDefault()
-    if (!prompt.trim() || loading) return
+    const requestPrompt = prompt.trim()
+    if (!requestPrompt || loading) return
+    // 新请求必须先退出上一轮会话，失败时也不能继续展示旧电路的结果。
+    setResult(null)
+    setResultPrompt('')
+    setActiveStep(0)
+    setAutoPlaying(false)
     setLoading(true)
     setError('')
     try {
       const response = await fetch('/api/debug', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: requestPrompt }),
       })
       const payload = (await response.json()) as DebugResponse & { error?: string }
       if (!response.ok) throw new Error(payload.error)
       setResult(payload)
+      setResultPrompt(requestPrompt)
       setActiveStep(0)
       setAutoPlaying(true)
     } catch {
@@ -492,6 +524,16 @@ function App() {
   const highlightedLine = current
     ? executableLineIndex(qasm, Number(current.data.operation_index ?? -1))
     : -1
+  const teachingStep = current && typeof current.data.operation_index === 'number'
+    ? result?.teaching?.steps.find(
+      (step) => step.operation_index === current.data.operation_index,
+    )
+    : undefined
+  const currentPurpose = current?.stage === 'initial_state'
+    ? '先确认程序的共同起点，后续每个 Gate 的变化都会与这个初始状态比较。'
+    : teachingStep?.purpose ?? String(current?.data.gate_description ?? current?.summary ?? '')
+  const circuitGoal = result?.teaching?.circuit_goal || resultPrompt
+  const phaseOnly = current ? isPhaseOnlyChange(current) : false
 
   useEffect(() => {
     const container = codeViewRef.current
@@ -538,7 +580,7 @@ function App() {
         <div className="example-row">
           <span>试试示例</span>
           {EXAMPLES.map((example, index) => (
-            <button key={example} onClick={() => setPrompt(example)}>
+            <button key={example} onClick={() => setPrompt(example)} disabled={loading}>
               <em>0{index + 1}</em>{example}
             </button>
           ))}
@@ -546,7 +588,7 @@ function App() {
         {error && <div className="error-banner"><span>!</span>{error}</div>}
       </section>
 
-      {!result && !loading && <EmptyWorkspace />}
+      {!result && <EmptyWorkspace loading={loading} />}
 
       {result && backendMode && (
         <div className="backend-layout">
@@ -569,10 +611,10 @@ function App() {
                     key={step.seq}
                     onClick={() => selectStep(index)}
                   >
-                    <span className="step-number">{String(index + 1).padStart(2, '0')}</span>
+                    <span className="step-number">{String(index).padStart(2, '0')}</span>
                     <span className="step-copy">
                       <strong>{stepTitle(step)}</strong>
-                      <small>{step.stage === 'measurement' ? '读出量子状态' : '量子门操作'}</small>
+                      <small>{step.stage === 'initial_state' ? '程序执行前' : step.stage === 'measurement' ? '读出量子状态' : '量子门操作'}</small>
                     </span>
                     <span className="step-check">{index <= activeStep ? '✓' : ''}</span>
                   </button>
@@ -592,12 +634,16 @@ function App() {
               {current ? (
                 <>
                   <div className="current-operation">
+                    <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
                     <div className="operation-copy">
                       <div>
-                        <span className="eyebrow">当前操作 · 第 {activeStep + 1} 步</span>
+                        <span className="eyebrow">当前操作 · 第 {activeStep} 步</span>
                         <h2>{stepTitle(current)}</h2>
                       </div>
-                      <p>{String(current.data.gate_description ?? current.summary)}</p>
+                      <div className="purpose-copy">
+                        <span>为什么这里需要它？</span>
+                        <p>{currentPurpose}</p>
+                      </div>
                     </div>
                     <div className="operation-navigation" aria-label="电路回放控制">
                       <button
@@ -607,7 +653,7 @@ function App() {
                       >
                         <span>←</span> 上一步
                       </button>
-                      <span className="operation-position">{activeStep + 1} / {steps.length}</span>
+                      <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
                       <button
                         className="primary-step"
                         aria-label="下一步"
@@ -654,7 +700,11 @@ function App() {
                 <>
                   <div className="state-heading">
                     <span className="eyebrow">量子状态可视化</span>
-                    <span className="state-badge"><i /> {current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
+                    <span className="state-badge"><i /> {current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
+                  </div>
+                  <div className="state-change-copy">
+                    <span>发生了什么？</span>
+                    <p>{String(current.data.gate_description ?? current.summary)}</p>
                   </div>
                   <div className="probability-section">
                     <div className="subheading">
@@ -663,6 +713,13 @@ function App() {
                     </div>
                     <ProbabilityComparison event={current} />
                   </div>
+                  {phaseOnly && (
+                    <div className="phase-only-alert">
+                      <strong>概率没有变化，但相位发生了变化。</strong>
+                      <p>相位不会总是立刻体现在测量概率里，但会影响后续干涉。</p>
+                    </div>
+                  )}
+                  <ConceptCard step={teachingStep} />
                   {current.stage === 'measurement' && (
                     <div className="measurement-card">
                       <span className="detail-label">QUANTUM → CLASSICAL</span>
@@ -673,7 +730,14 @@ function App() {
                       ))}
                     </div>
                   )}
-                  <TechnicalDetails event={current} state={currentState} />
+                  {current.stage !== 'initial_state' && (
+                    <>
+                      <TechnicalDetails event={current} state={currentState} />
+                      {result.teaching && (
+                        <p className="teaching-disclaimer">教学解释由模型根据已验证电路生成，不参与正确性判断。</p>
+                      )}
+                    </>
+                  )}
                 </>
               ) : (
                 <div className="panel-empty">当前没有可展示的量子状态。</div>

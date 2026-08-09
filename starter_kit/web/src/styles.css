@@ -52,7 +52,8 @@ code, kbd { font-family: var(--mono); }
 .example-row { max-width: 1260px; margin: 9px auto 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .example-row > span { color: #616b78; font-size: 10px; letter-spacing: .1em; margin-right: 3px; }
 .example-row button { padding: 5px 9px; border: 1px solid #252b34; border-radius: 4px; color: #8c96a3; background: #111419; font-size: 11px; cursor: pointer; }
-.example-row button:hover { color: #c9d1da; border-color: #3a4652; }
+.example-row button:hover:not(:disabled) { color: #c9d1da; border-color: #3a4652; }
+.example-row button:disabled { opacity: .45; cursor: not-allowed; }
 .example-row em { margin-right: 6px; color: #52606c; font: normal 9px var(--mono); }
 .error-banner { max-width: 1260px; margin: 10px auto 0; padding: 9px 12px; border-radius: 4px; font-size: 12px; }
 .error-banner { color: #e7a1a7; background: rgba(224,108,117,.08); border: 1px solid rgba(224,108,117,.2); }
@@ -92,12 +93,16 @@ code, kbd { font-family: var(--mono); }
 .process-row code { margin-left: 6px; color: #699378; font-size: 8px; }
 
 .code-panel { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); overflow: hidden; }
-.current-operation { height: 154px; display: flex; flex-direction: column; align-items: stretch; padding: 16px 20px 14px; border-bottom: 1px solid var(--border); background: #12161b; }
+.current-operation { min-height: 176px; display: flex; flex-direction: column; align-items: stretch; padding: 13px 20px 14px; border-bottom: 1px solid var(--border); background: #12161b; }
 .eyebrow { color: #65717e; font: 9px var(--mono); letter-spacing: .12em; }
-.operation-copy { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.circuit-goal { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; overflow: hidden; color: #9ba7b2; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.circuit-goal span { padding: 2px 5px; color: #7ebbc3; border: 1px solid rgba(88,201,216,.2); border-radius: 2px; background: rgba(88,201,216,.06); font: 8px var(--mono); }
+.operation-copy { display: grid; grid-template-columns: minmax(105px, auto) 1fr; align-items: center; gap: 20px; min-width: 0; }
 .operation-copy > div { flex: 0 0 auto; }
 .current-operation h2 { margin: 6px 0 0; color: #e4e9ef; font: 19px var(--mono); letter-spacing: -.02em; }
-.operation-copy p { margin: 0; color: #8f9ba7; font-size: 10px; line-height: 1.55; }
+.purpose-copy { padding-left: 13px; border-left: 2px solid #396f77; }
+.purpose-copy > span, .state-change-copy > span { display: block; margin-bottom: 4px; color: #70aab2; font-size: 9px; font-weight: 650; }
+.operation-copy p { margin: 0; color: #a8b2bd; font-size: 10px; line-height: 1.55; }
 .operation-position { margin-left: auto; padding: 5px 8px; color: var(--cyan); background: rgba(88,201,216,.07); border: 1px solid rgba(88,201,216,.17); border-radius: 3px; font: 10px var(--mono); }
 .operation-navigation { margin-top: auto; display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
 .operation-navigation .operation-position { margin: 0; min-width: 45px; text-align: center; }
@@ -146,6 +151,8 @@ code, kbd { font-family: var(--mono); }
 .state-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .state-badge { color: #71b58a; font: 9px var(--mono); }
 .state-badge i { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--green); }
+.state-change-copy { padding: 11px 12px; border-left: 2px solid #3c6870; background: #14191f; }
+.state-change-copy p { margin: 0; color: #909ca8; font-size: 10px; line-height: 1.55; }
 .explanation-card { display: flex; gap: 11px; padding: 13px; border: 1px solid #29313a; border-left: 2px solid #4ba6b2; border-radius: 4px; background: #151b20; }
 .explanation-icon { flex: 0 0 18px; height: 18px; display: grid; place-items: center; color: var(--cyan); border: 1px solid #387681; border-radius: 50%; font: 10px var(--mono); }
 .explanation-card h3, .subheading h3 { margin: 0; color: #d8dee6; font-size: 12px; }
@@ -174,6 +181,15 @@ code, kbd { font-family: var(--mono); }
 .probability-changes > span { color: #66727e; font-size: 9px; }
 .probability-changes code { padding: 3px 5px; color: #9fbdc1; border-radius: 2px; background: #151c21; font-size: 8px; }
 .measurement-probability-note { margin: 7px 0 0; color: #6f7b87; font-size: 9px; line-height: 1.55; }
+.initial-probability { margin-top: 10px; padding: 10px 12px 5px; border: 1px solid #2b4a50; border-radius: 4px; background: #10181c; }
+.phase-only-alert { margin-top: 12px; padding: 11px 12px; color: #d7b879; border: 1px solid rgba(211,163,92,.25); border-left: 2px solid var(--orange); border-radius: 4px; background: rgba(211,163,92,.065); }
+.phase-only-alert strong { display: block; font-size: 11px; }
+.phase-only-alert p { margin: 5px 0 0; color: #a9936c; font-size: 10px; line-height: 1.55; }
+.concept-card { margin-top: 12px; padding: 12px; border: 1px solid rgba(168,138,224,.22); border-radius: 4px; background: rgba(168,138,224,.055); }
+.concept-card > span { display: block; margin-bottom: 6px; color: #8d7fb0; font-size: 9px; }
+.concept-card strong { color: #c6b3ed; font-size: 12px; }
+.concept-card p { margin: 5px 0 0; color: #9f96b2; font-size: 10px; line-height: 1.6; }
+.teaching-disclaimer { margin: 7px 0 0; color: #525d68; font-size: 8px; line-height: 1.45; }
 .empty-copy { font-size: 11px; }
 .measurement-card { margin: 15px 0; padding: 12px; background: #0e1115; border: 1px solid var(--border); border-radius: 4px; }
 .detail-label { display: block; margin-bottom: 8px; color: #687583; font: 8px var(--mono); letter-spacing: .1em; }
@@ -256,6 +272,7 @@ code, kbd { font-family: var(--mono); }
 .skeleton-line.short { width: 55%; }
 .empty-main { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #66717e; }
 .empty-icon { width: 54px; height: 54px; display: grid; place-items: center; border: 1px solid #29313a; border-radius: 10px; color: #527f85; background: #12171b; font: 29px var(--mono); }
+.empty-icon.loading { color: var(--cyan); border-color: rgba(88,201,216,.3); animation: pulse 1.2s ease-in-out infinite; }
 .empty-main h2 { margin: 18px 0 7px; color: #afb7c1; font-size: 15px; }
 .empty-main p { max-width: 420px; margin: 0; text-align: center; font-size: 11px; line-height: 1.6; }
 .keyboard-hint { margin-top: 20px; color: #596470; font-size: 9px; }

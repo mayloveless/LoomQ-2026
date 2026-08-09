@@ -9,22 +9,48 @@ import json
 from typing import Any, Callable, Sequence
 
 from .debug_cli import build_debug_trace
+from .teaching_explainer import TeachingExplanation, explain_validated_circuit
 
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_REQUEST_BYTES = 64 * 1024
 DebugBuilder = Callable[[str], tuple[str, Sequence[Any]]]
+TeachingExplainer = Callable[
+    [str, str, Sequence[Any]], TeachingExplanation | None
+]
 
 
 def build_debug_payload(
-    prompt: str, *, debug_builder: DebugBuilder = build_debug_trace
+    prompt: str,
+    *,
+    debug_builder: DebugBuilder = build_debug_trace,
+    teaching_explainer: TeachingExplainer = explain_validated_circuit,
 ) -> dict[str, Any]:
     """复用共享 Trace 入口，并把事件转换成稳定的 JSON 数据。"""
     reply, events = debug_builder(prompt)
+    final_qasm = next(
+        (
+            event.data["qasm"]
+            for event in reversed(events)
+            if event.layer == "agent"
+            and event.stage == "agent_result"
+            and isinstance(event.data.get("qasm"), str)
+        ),
+        None,
+    )
+    teaching = None
+    if final_qasm is not None:
+        circuit_events = tuple(event for event in events if event.layer == "circuit")
+        # Explainer 只在 Web payload 组装阶段运行；失败不影响 reply/events。
+        try:
+            teaching = teaching_explainer(prompt, final_qasm, circuit_events)
+        except Exception:
+            teaching = None
     return {
         "reply": reply,
         "events": [event.as_dict() for event in events],
+        "teaching": teaching.as_dict() if teaching is not None else None,
     }
 
 
