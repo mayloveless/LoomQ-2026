@@ -13,10 +13,12 @@ try:
 except ImportError:  # pragma: no cover - 由 starter_kit 评测根目录运行时使用
     import llm_client  # type: ignore[no-redef]
 
-from .backend_selector import BackendConstraints, select_backends
+from .backend_selector import Backend, BackendConstraints, select_backends
+from .debug_trace import TraceRecorder
 from .parser import parse_qasm
 from .qasm_tools import QASMValidationError, extract_qasm, validate_qasm
 from .semantic_verifier import (
+    DEFAULT_FIDELITY_THRESHOLD,
     SemanticVerificationError,
     TargetSpecification,
     parse_target_specification,
@@ -107,6 +109,26 @@ class _CandidateVerificationError(RuntimeError):
         super().__init__("candidate QASM failed local verification")
         self.diagnostic = diagnostic
         self.fidelity = fidelity
+
+
+def _trace(
+    trace_sink: TraceRecorder | None,
+    *,
+    stage: str,
+    executor: str,
+    status: str,
+    summary: str,
+    data: Mapping[str, Any] | None = None,
+) -> None:
+    if trace_sink is not None:
+        trace_sink.emit(
+            layer="agent",
+            stage=stage,
+            executor=executor,
+            status=status,
+            summary=summary,
+            data=data,
+        )
 
 
 def _response_content(response: Any) -> str:
@@ -251,6 +273,7 @@ def _verify_candidate(
     target: TargetSpecification,
     *,
     require_measurement: bool,
+    trace_sink: TraceRecorder | None = None,
 ) -> GenerationResponse:
     try:
         generated = _validate_candidate(
@@ -258,12 +281,37 @@ def _verify_candidate(
             require_measurement=require_measurement,
         )
     except QASMValidationError as exc:
+        _trace(
+            trace_sink,
+            stage="parser_validation",
+            executor="local",
+            status="error",
+            summary="Candidate QASM failed local Parser validation.",
+            data={"diagnostic": exc.diagnostic},
+        )
         raise _CandidateVerificationError(exc.diagnostic) from None
+
+    _trace(
+        trace_sink,
+        stage="parser_validation",
+        executor="local",
+        status="ok",
+        summary="Candidate QASM passed Parser and L2 structure validation.",
+        data={"require_measurement": require_measurement},
+    )
 
     circuit = parse_qasm(generated.qasm)
     try:
         verification = verify_semantics(circuit, target)
     except SemanticVerificationError:
+        _trace(
+            trace_sink,
+            stage="semantic_verification",
+            executor="local",
+            status="error",
+            summary="Local statevector semantic verification could not complete.",
+            data={"diagnostic": "local statevector verification failed"},
+        )
         raise _CandidateVerificationError(
             "SemanticSimulationError: local statevector verification failed"
         ) from None
@@ -273,13 +321,43 @@ def _verify_candidate(
             diagnostic = "SemanticVerificationError: candidate does not match target"
         else:
             diagnostic = "SemanticFidelityError: fidelity %.6f is below 0.970000" % fidelity
+        _trace(
+            trace_sink,
+            stage="semantic_verification",
+            executor="local",
+            status="error",
+            summary="Candidate QASM did not match the independent target.",
+            data={
+                "mode": verification.mode,
+                "fidelity": fidelity,
+                "threshold": DEFAULT_FIDELITY_THRESHOLD,
+                "passed": False,
+                "diagnostic": diagnostic,
+            },
+        )
         raise _CandidateVerificationError(diagnostic, fidelity=fidelity) from None
+    _trace(
+        trace_sink,
+        stage="semantic_verification",
+        executor="local",
+        status="ok",
+        summary="Candidate QASM passed deterministic semantic verification.",
+        data={
+            "mode": verification.mode,
+            "fidelity": verification.fidelity,
+            "threshold": DEFAULT_FIDELITY_THRESHOLD,
+            "passed": True,
+        },
+    )
     return generated
 
 
-def _format_backend_reply(constraints: BackendConstraints) -> str:
+def _format_backend_reply(
+    constraints: BackendConstraints, matches: tuple[Backend, ...] | None = None
+) -> str:
     """Select and format only IDs originating from the official local table."""
-    matches = select_backends(constraints)
+    if matches is None:
+        matches = select_backends(constraints)
     if matches:
         backend_ids = "、".join("`%s`" % backend.id for backend in matches)
         reasons = []
@@ -390,8 +468,8 @@ def _repair_prompt(
     return json.dumps(payload, ensure_ascii=False)
 
 
-def agent_chat(prompt: str) -> str:
-    """Route one model response to deterministic selection or validated QASM."""
+def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
+    """Run the production L2 path with an optional additive trace observer."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("L2 prompt must be a non-empty string")
     messages = [
@@ -400,29 +478,117 @@ def agent_chat(prompt: str) -> str:
     ]
     raw_response = _call_model(messages)
     payload = _parse_response_payload(raw_response)
+    task_type = payload.get("task_type")
+    _trace(
+        trace_sink,
+        stage="intent",
+        executor="llm",
+        status="ok",
+        summary="The model classified the requested L2 task.",
+        data={"task_type": task_type, "llm_call": 1},
+    )
     if payload.get("task_type") == "select_backend":
         constraints = _parse_backend_constraints(payload)
         _parse_explanation(payload)
-        return _format_backend_reply(constraints)
+        constraint_data = {
+            "min_qubits": constraints.min_qubits,
+            "require_qpu": constraints.require_qpu,
+            "require_no_queue": constraints.require_no_queue,
+            "cost_policy": constraints.cost_policy,
+            "allow_account_required": constraints.allow_account_required,
+        }
+        _trace(
+            trace_sink,
+            stage="backend_constraints",
+            executor="llm",
+            status="ok",
+            summary="The model extracted backend constraints without selecting an ID.",
+            data={**constraint_data, "llm_call": 1},
+        )
+        matches = select_backends(constraints)
+        backend_ids = [backend.id for backend in matches]
+        _trace(
+            trace_sink,
+            stage="backend_selected",
+            executor="local",
+            status="ok" if matches else "warning",
+            summary=(
+                "Local capability filtering selected canonical backend IDs."
+                if matches
+                else "No backend satisfies every extracted constraint."
+            ),
+            data={"backend_ids": backend_ids, "no_match": not bool(matches)},
+        )
+        reply = _format_backend_reply(constraints, matches)
+        _trace(
+            trace_sink,
+            stage="agent_result",
+            executor="local",
+            status="ok",
+            summary="Backend selection completed.",
+            data={"task_type": "select_backend", "backend_ids": backend_ids},
+        )
+        return reply
 
     require_measurement = _requires_measurement(prompt)
     candidate = _parse_candidate_payload(payload)
+    pure_state_guard = requires_statevector_verification(prompt)
+    _trace(
+        trace_sink,
+        stage="qasm_candidate",
+        executor="llm",
+        status="ok",
+        summary="The model produced an OpenQASM candidate.",
+        data={
+            "task_type": candidate.task_type,
+            "qasm": candidate.qasm,
+            "require_measurement": require_measurement,
+            "pure_state_guard": pure_state_guard,
+            "llm_call": 1,
+        },
+    )
     judge_messages = [
         {"role": "system", "content": TARGET_JUDGE_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
     target = _parse_target_judge_response(_call_model(judge_messages))
-    if requires_statevector_verification(prompt) and target.verification_mode == "unsupported":
+    target_trace_data = target.as_prompt_payload()
+    # 模型 explanation 不参与裁判，也不进入安全调试协议。
+    target_trace_data.pop("explanation", None)
+    _trace(
+        trace_sink,
+        stage="target_spec",
+        executor="llm",
+        status="ok",
+        summary="An independent model call extracted the verification target.",
+        data={**target_trace_data, "llm_call": 2},
+    )
+    if pure_state_guard and target.verification_mode == "unsupported":
         raise RuntimeError(
             "L2 target judge cannot downgrade an explicit pure-state request"
         )
+    repair_triggered = False
     try:
         generated = _verify_candidate(
             candidate,
             target,
             require_measurement=require_measurement,
+            trace_sink=trace_sink,
         )
     except _CandidateVerificationError as first_error:
+        repair_triggered = True
+        _trace(
+            trace_sink,
+            stage="repair_started",
+            executor="llm",
+            status="running",
+            summary="One bounded model repair was requested.",
+            data={
+                "llm_call": 3,
+                "diagnostic": first_error.diagnostic,
+                "fidelity": first_error.fidelity,
+            },
+        )
         repair_messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {
@@ -439,11 +605,24 @@ def agent_chat(prompt: str) -> str:
         ]
         repair_response = _call_model(repair_messages)
         repaired_candidate = _parse_candidate_response(repair_response)
+        _trace(
+            trace_sink,
+            stage="repair_candidate",
+            executor="llm",
+            status="ok",
+            summary="The model returned its single repair candidate.",
+            data={
+                "task_type": repaired_candidate.task_type,
+                "qasm": repaired_candidate.qasm,
+                "llm_call": 3,
+            },
+        )
         try:
             generated = _verify_candidate(
                 repaired_candidate,
                 target,
                 require_measurement=require_measurement,
+                trace_sink=trace_sink,
             )
         except _CandidateVerificationError:
             raise RuntimeError(
@@ -451,11 +630,30 @@ def agent_chat(prompt: str) -> str:
             ) from None
 
     explanation = generated.explanation or "已生成并通过 OpenQASM 2.0 校验。"
-    return "%s\n\n```qasm\n%s\n```" % (explanation, generated.qasm)
+    reply = "%s\n\n```qasm\n%s\n```" % (explanation, generated.qasm)
+    _trace(
+        trace_sink,
+        stage="agent_result",
+        executor="local",
+        status="ok",
+        summary="A validated OpenQASM result is ready.",
+        data={
+            "task_type": generated.task_type,
+            "qasm": generated.qasm,
+            "repaired": repair_triggered,
+        },
+    )
+    return reply
+
+
+def agent_chat(prompt: str) -> str:
+    """Preserve the official production signature with tracing disabled."""
+    return _run_agent(prompt, trace_sink=None)
 
 
 __all__ = [
     "GenerationResponse",
+    "_run_agent",
     "agent_chat",
     "parse_generation_response",
     "requires_statevector_verification",
