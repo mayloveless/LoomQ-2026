@@ -149,7 +149,7 @@ function ProbabilityComparison({ event }: { event: TraceEvent }) {
     return (
       <>
         <ProbabilityRows entries={after} />
-        <p className="measurement-probability-note">测量读取这个概率分布；Trace 不伪造一次随机坍缩结果。</p>
+        <p className="measurement-probability-note">测量读取这个概率分布；这里不伪造一次随机坍缩结果。</p>
       </>
     )
   }
@@ -381,7 +381,7 @@ function TechnicalDetails({ event, state }: { event: TraceEvent; state: StateEnt
                 <code>→ {mapping.classical_bit}</code>
               </div>
             ))}
-            <p className="phase-note">Trace 展示测量前的确定性概率分布，不伪造单次随机测量结果。</p>
+            <p className="phase-note">这里展示测量前的确定性概率分布，不伪造单次随机测量结果。</p>
           </div>
         )}
       </div>
@@ -515,11 +515,11 @@ function ScenarioGrid({
 
 function LoadingProcess() {
   return (
-    <div className="loading-process" aria-label="LoomQ 正在准备调试结果">
+    <div className="loading-process" aria-label="LoomQ 正在准备量子程序">
       <div className="loading-process-heading">
         <span className="loading-orbit" aria-hidden="true">⌁</span>
         <div>
-          <h2>LoomQ 正在准备这次调试</h2>
+          <h2>LoomQ 正在准备量子程序</h2>
           <p>以下是等待阶段提示，真实验证结果将在请求完成后展示。</p>
         </div>
       </div>
@@ -531,7 +531,7 @@ function LoadingProcess() {
           </li>
         ))}
       </ol>
-      <small>非实时 Trace · 不预先声明校验或验证结果</small>
+      <small>过程提示 · 不预先声明校验或验证结果</small>
     </div>
   )
 }
@@ -540,7 +540,7 @@ function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scen
   return (
     <div className={`workspace empty-workspace ${loading ? 'loading-workspace' : ''}`}>
       <div className="empty-rail panel">
-        <span className="rail-label">DEBUG SESSION</span>
+        <span className="rail-label">QUANTUM EXPLORATION</span>
         <div className="skeleton-line long" />
         <div className="skeleton-line" />
         <div className="skeleton-line short" />
@@ -549,14 +549,14 @@ function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scen
         {loading ? <LoadingProcess /> : scenario ? (
           <>
             <ScenarioContext scenario={scenario} />
-            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 生成并调试</span>
+            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 运行量子程序</span>
           </>
         ) : (
           <>
             <div className="empty-icon">⌁</div>
-            <h2>准备开始一次量子调试</h2>
-            <p>选择示例或描述目标，LoomQ 会生成、验证并拆解每一步电路状态。</p>
-            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 生成并调试</span>
+            <h2>准备探索一个量子程序</h2>
+            <p>选择示例或描述目标，LoomQ 会运行程序并呈现每一步的状态变化。</p>
+            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 运行量子程序</span>
           </>
         )}
       </div>
@@ -626,7 +626,7 @@ function App() {
       setActiveStep(0)
       setAutoPlaying(true)
     } catch {
-      setError('这次调试没有完成，请检查模型配置后重试。')
+      setError('这次运行没有完成，请检查模型配置后重试。')
     } finally {
       setLoading(false)
     }
@@ -702,11 +702,11 @@ function App() {
       <header className="topbar">
         <div className="brand-mark"><span>L</span></div>
         <div className="brand-copy">
-          <div><strong>LoomQ</strong><span>Quantum DevTools</span><em>MVP</em></div>
-          <p>像调试普通代码一样，看懂量子程序每一步发生了什么</p>
+          <div><strong>LoomQ</strong><span>Quantum Explorer</span><em>MVP</em></div>
+          <p>像阅读代码一样，理解量子程序每一步如何改变状态</p>
         </div>
         <div className={`connection ${loading ? 'loading' : ''}`}>
-          <i /> {loading ? '正在生成并验证量子程序…' : 'LOCAL DEBUG'}
+          <i /> {loading ? '正在生成并验证量子程序…' : 'LOCAL EXPLORATION'}
         </div>
       </header>
 
@@ -714,7 +714,7 @@ function App() {
         <form className="prompt-form" onSubmit={runDebug}>
           <span className="prompt-glyph">›_</span>
           <textarea
-            aria-label="描述你的量子任务"
+            aria-label="描述你想探索的量子程序"
             value={prompt}
             onChange={(event) => {
               setPrompt(event.target.value)
@@ -725,7 +725,7 @@ function App() {
             disabled={loading}
           />
           <button type="submit" disabled={loading || !prompt.trim()}>
-            <span>{loading ? '验证中' : '生成并调试'}</span>
+            <span>{loading ? '运行中' : '运行量子程序'}</span>
             {!loading && <kbd>⌘ ↵</kbd>}
           </button>
         </form>
@@ -776,7 +776,7 @@ function App() {
                 {warnings.map((warning) => (
                   <div className="warning-step" key={warning.seq}>
                     <span>!</span><p>{warning.stage === 'statevector_skipped'
-                      ? '电路规模较大，当前教学调试器不展开 statevector；程序生成与验证结果仍然有效。'
+                      ? '电路规模较大，当前探索视图不展开 statevector；程序生成与验证结果仍然有效。'
                       : warning.summary}</p>
                   </div>
                 ))}
@@ -790,7 +790,7 @@ function App() {
                     <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
                     <div className="operation-copy">
                       <div>
-                        <span className="eyebrow">当前操作 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
+                        <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
                         <h2>{stepTitle(current)}</h2>
                         {current.stage !== 'initial_state' && currentStatement && (
                           <code className="current-statement">{currentStatement}</code>
@@ -801,7 +801,7 @@ function App() {
                         <p>{currentPurpose}</p>
                       </div>
                     </div>
-                    <div className="operation-navigation" aria-label="电路回放控制">
+                    <div className="operation-navigation" aria-label="电路执行控制">
                       <button
                         aria-label="上一步"
                         onClick={() => selectStep(Math.max(0, activeStep - 1))}
@@ -853,7 +853,7 @@ function App() {
                   </details>
                 </>
               ) : (
-                <div className="panel-empty">没有可回放的 Circuit Trace。</div>
+                <div className="panel-empty">没有可探索的电路步骤。</div>
               )}
             </section>
 
@@ -861,7 +861,7 @@ function App() {
               {current ? (
                 <>
                   <div className="state-heading">
-                    <span className="eyebrow">量子状态可视化</span>
+                    <span className="eyebrow">量子状态变化</span>
                     <span className="state-badge"><i /> {current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
                   </div>
                   <div className="state-change-copy">
