@@ -56,6 +56,7 @@ def bell_target():
     return completion(
         {
             "verification_mode": "statevector",
+            "pure_state_requested": True,
             "qubit_count": 2,
             "amplitudes": [
                 {"basis": "00", "real": SQRT_HALF, "imag": 0.0},
@@ -145,6 +146,7 @@ class L2SemanticAgentTests(unittest.TestCase):
             completion(
                 {
                     "verification_mode": "unsupported",
+                    "pure_state_requested": False,
                     "explanation": "request is not a reliable pure-state target",
                 }
             ),

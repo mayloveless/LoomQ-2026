@@ -33,6 +33,7 @@ class TargetAmplitude:
 @dataclass(frozen=True)
 class TargetSpecification:
     verification_mode: str
+    pure_state_requested: bool
     qubit_count: int | None
     amplitudes: tuple[TargetAmplitude, ...]
     explanation: str
@@ -40,6 +41,7 @@ class TargetSpecification:
     def as_prompt_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "verification_mode": self.verification_mode,
+            "pure_state_requested": self.pure_state_requested,
             "explanation": self.explanation,
         }
         if self.verification_mode == "statevector":
@@ -78,19 +80,34 @@ def parse_target_specification(payload: Any) -> TargetSpecification:
     if "qasm" in payload:
         raise TargetSpecificationError("target judge must not return QASM")
     mode = payload.get("verification_mode")
+    pure_state_requested = payload.get("pure_state_requested")
+    if not isinstance(pure_state_requested, bool):
+        raise TargetSpecificationError(
+            "target pure_state_requested must be a boolean"
+        )
     explanation = payload.get("explanation", "")
     if not isinstance(explanation, str):
         raise TargetSpecificationError("target explanation must be a string")
 
     if mode == "unsupported":
+        if pure_state_requested:
+            # 明确纯态请求不能以 unsupported 静默绕过语义校验。
+            raise TargetSpecificationError(
+                "explicit pure-state target must use statevector verification"
+            )
         return TargetSpecification(
             verification_mode="unsupported",
+            pure_state_requested=False,
             qubit_count=None,
             amplitudes=(),
             explanation=explanation.strip(),
         )
     if mode != "statevector":
         raise TargetSpecificationError("unsupported target verification_mode")
+    if not pure_state_requested:
+        raise TargetSpecificationError(
+            "statevector target must identify an explicit pure-state request"
+        )
 
     qubit_count = payload.get("qubit_count")
     if (
@@ -132,6 +149,7 @@ def parse_target_specification(payload: Any) -> TargetSpecification:
         raise TargetSpecificationError("target amplitudes must be normalized")
     return TargetSpecification(
         verification_mode="statevector",
+        pure_state_requested=True,
         qubit_count=qubit_count,
         amplitudes=tuple(amplitudes),
         explanation=explanation.strip(),
@@ -191,6 +209,10 @@ def simulate_statevector(circuit: Circuit) -> tuple[complex, ...]:
         include_stdgates=False,
         execution_mode=True,
     )
+    # Braket 会裁掉从未被引用的 idle qubit；零角度旋转只用于保留声明宽度。
+    for register in verification_circuit.quantum_registers:
+        for index in range(register.size):
+            source += "rz(0) %s[%d];\n" % (register.name, index)
     source += "#pragma braket result state_vector\n"
     try:
         device = devices.LocalSimulator("braket_sv")

@@ -21,6 +21,7 @@ def target(qubit_count, amplitudes):
     return parse_target_specification(
         {
             "verification_mode": "statevector",
+            "pure_state_requested": True,
             "qubit_count": qubit_count,
             "amplitudes": [
                 {
@@ -65,7 +66,20 @@ class TargetSpecificationTests(unittest.TestCase):
             parse_target_specification(
                 {
                     "verification_mode": "unsupported",
+                    "pure_state_requested": False,
                     "qasm": "OPENQASM 2.0;",
+                }
+            )
+
+    def test_explicit_pure_state_cannot_downgrade_to_unsupported(self):
+        with self.assertRaisesRegex(
+            TargetSpecificationError, "must use statevector"
+        ):
+            parse_target_specification(
+                {
+                    "verification_mode": "unsupported",
+                    "pure_state_requested": True,
+                    "explanation": "judge failed to express the requested state",
                 }
             )
 
@@ -80,6 +94,12 @@ class BraketSemanticVerifierTests(unittest.TestCase):
         )
         self.assertTrue(result.passed)
         self.assertAlmostEqual(result.fidelity, 1.0)
+
+    def test_basis_order_matches_q0_to_qn_and_braket_statevector(self):
+        q0_one = parse_qasm(qasm(2, "x q[0];"))
+        q1_one = parse_qasm(qasm(2, "x q[1];"))
+        self.assertTrue(verify_semantics(q0_one, target(2, {"10": 1.0})).passed)
+        self.assertTrue(verify_semantics(q1_one, target(2, {"01": 1.0})).passed)
 
     def test_parser_valid_four_state_superposition_is_rejected_as_bell(self):
         circuit = parse_qasm(qasm(2, "h q[0];\nh q[1];"))

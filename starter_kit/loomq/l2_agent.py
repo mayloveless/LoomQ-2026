@@ -30,6 +30,7 @@ SYSTEM_PROMPT = """你是 LoomQ 的量子任务约束提取与 OpenQASM 2.0 助�
 请判断用户是在生成还是修复 QASM，并设置对应 task_type。
 qasm 必须是完整的 OpenQASM 2.0 程序，包含 include 和 qreg；用户明确要求测量时还必须包含 creg 和测量语句。
 只可使用当前项目支持的门：h、x、s、sdg、t、tdg、ry、rz、cx、cu1、swap、ccx。
+z 门不受支持，绝对不要输出 z；需要等价的 Z 相位时使用连续两个 s 门。
 修复时必须保持用户明确声明的目标态、目标功能和测量语义，不能只修正语法而改变电路目标。
 请根据用户的实际要求生成电路，不要硬编码公开 GHZ 示例的固定答案。
 选择后端时只提取用户约束，不要推荐或输出 backend ID，并返回：
@@ -40,10 +41,11 @@ qasm 必须是完整的 OpenQASM 2.0 程序，包含 include 和 qreg；用户�
 TARGET_JUDGE_SYSTEM_PROMPT = """你是独立的量子目标态规格提取器，只能依据用户原始请求判断目标，不能查看或猜测候选 QASM。
 只返回一个 JSON 对象，不返回额外散文，也绝对不要返回 QASM。
 如果目标可以可靠表示为纯态，返回：
-{"verification_mode":"statevector","qubit_count":2,"amplitudes":[{"basis":"00","real":0.7071067811865476,"imag":0.0},{"basis":"11","real":0.7071067811865476,"imag":0.0}],"explanation":"简短目标说明"}
+{"verification_mode":"statevector","pure_state_requested":true,"qubit_count":2,"amplitudes":[{"basis":"00","real":0.7071067811865476,"imag":0.0},{"basis":"11","real":0.7071067811865476,"imag":0.0}],"explanation":"简短目标说明"}
 basis 按 q[0] 到 q[n-1] 的顺序书写；未列出的 basis amplitude 视为 0。必须给出归一化、有限数值的复振幅，并保留用户要求的相对相位。
 如果原始请求无法可靠转换为纯态目标，返回：
-{"verification_mode":"unsupported","explanation":"无法可靠进行纯态验证的原因"}
+{"verification_mode":"unsupported","pure_state_requested":false,"explanation":"无法可靠进行纯态验证的原因"}
+明确要求 Bell、GHZ、给定纯态振幅或其他明确 pure-state 目标时，pure_state_requested 必须为 true，且不得返回 unsupported。
 """
 
 _JSON_FENCE_RE = re.compile(

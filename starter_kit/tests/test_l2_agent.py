@@ -65,6 +65,7 @@ def target_json(qubit_count=3):
     return json.dumps(
         {
             "verification_mode": "statevector",
+            "pure_state_requested": True,
             "qubit_count": qubit_count,
             "amplitudes": [
                 {"basis": "0" * qubit_count, "real": 2 ** -0.5, "imag": 0.0},
@@ -79,6 +80,7 @@ def unsupported_target_json():
     return json.dumps(
         {
             "verification_mode": "unsupported",
+            "pure_state_requested": False,
             "explanation": "no explicit pure-state target",
         }
     )
