@@ -65,7 +65,6 @@ code, kbd { font-family: var(--mono); }
 .scenario-picker > summary { width: fit-content; margin-left: auto; padding: 4px 1px; color: #65717d; cursor: pointer; font-size: 9px; list-style-position: inside; }
 .scenario-picker[open] > summary { color: #86b7bd; }
 .scenario-picker .scenario-grid { margin-top: 4px; }
-.scenario-picker .scenario-context { min-height: 92px; margin-top: 6px; border-top: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
 .error-banner { max-width: 1260px; margin: 10px auto 0; padding: 9px 12px; border-radius: 4px; font-size: 12px; }
 .error-banner { color: #e7a1a7; background: rgba(224,108,117,.08); border: 1px solid rgba(224,108,117,.2); }
 .error-banner span { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 8px; border: 1px solid var(--red); border-radius: 50%; font: 11px var(--mono); }

@@ -673,6 +673,15 @@ function App() {
   function selectScenario(scenario: Scenario) {
     setPrompt(scenario.prompt)
     setSelectedScenarioId(scenario.id)
+    if (result && scenario.prompt !== resultPrompt) {
+      // 切换场景时立即退出旧会话，避免新 prompt 与旧 Circuit Trace 同屏。
+      setResult(null)
+      setResultPrompt('')
+      setActiveStep(0)
+      setAutoPlaying(false)
+      setQasmOpen(false)
+      setError('')
+    }
   }
 
   useEffect(() => {
@@ -727,7 +736,6 @@ function App() {
           <details className="scenario-picker">
             <summary>切换示例</summary>
             <ScenarioGrid selectedId={selectedScenarioId} onSelect={selectScenario} />
-            {selectedScenario && <ScenarioContext scenario={selectedScenario} />}
           </details>
         )}
         {error && <div className="error-banner"><span>!</span>{error}</div>}
