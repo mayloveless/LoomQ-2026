@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, SCENARIOS, ScenarioContext } from './App'
+import { ConceptCard, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -50,5 +50,30 @@ describe('Task 13D scenario entry', () => {
     expect(markup).toContain('普通程序怎么理解？')
     expect(markup).toContain('量子版本有什么不同？')
     expect(markup).toContain('这次重点看什么？')
+  })
+})
+
+describe('Task 13G Explorer entry', () => {
+  it('prefills the selected stable prompt without rendering scenario pickers', () => {
+    const markup = renderToStaticMarkup(
+      <ExplorerScreen initialScenarioId="search" onExperiments={() => undefined} onLearn={() => undefined} />,
+    )
+
+    expect(markup).toContain(
+      SCENARIOS.find((scenario) => scenario.id === 'search')!.prompt.replaceAll('>', '&gt;'),
+    )
+    expect(markup).toContain('Experiments · 选择实验')
+    expect(markup).toContain('Learn · 基础概念')
+    expect(markup).not.toContain('场景示例')
+    expect(markup).not.toContain('切换示例')
+  })
+
+  it('opens free exploration with an empty prompt', () => {
+    const markup = renderToStaticMarkup(
+      <ExplorerScreen initialScenarioId={null} onExperiments={() => undefined} onLearn={() => undefined} />,
+    )
+
+    expect(markup).toMatch(/<textarea[^>]*><\/textarea>/)
+    expect(markup).toContain('在上方描述你的目标')
   })
 })

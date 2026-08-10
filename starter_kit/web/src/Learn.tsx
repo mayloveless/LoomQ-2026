@@ -31,7 +31,7 @@ export function LearnScreen({ onStart }: LearnScreenProps) {
           <div><strong>LoomQ</strong><span>Learn</span></div>
           <p>开发者的量子程序入门</p>
         </div>
-        <button className="learn-skip" onClick={onStart}>直接进入 Explorer <span>→</span></button>
+        <button className="learn-skip" onClick={onStart}>跳过入门，选择实验 <span>→</span></button>
       </header>
 
       <section className="learn-hero">
@@ -168,7 +168,7 @@ export function LearnScreen({ onStart }: LearnScreenProps) {
         <span>READY TO EXPLORE</span>
         <h2>你已经能读懂量子程序<br />最基本的执行过程。</h2>
         <p>进入 Explorer 后，可以逐步运行更完整的电路，同时观察每条指令和量子状态变化。</p>
-        <button className="learn-primary" onClick={onStart}>进入量子程序 Explorer <span>→</span></button>
+        <button className="learn-primary" onClick={onStart}>选择一个量子实验 <span>→</span></button>
       </section>
     </main>
   )

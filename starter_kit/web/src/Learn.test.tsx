@@ -22,7 +22,8 @@ describe('Task 13F-5 quantum term visual language', () => {
     const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} />)
     const text = plainText(markup)
 
-    expect(text).toContain('一个量子电路（Quantum Circuit），三步看完')
+    expect(text).toContain('一个量子电路，三步看完')
+    expect(text).toContain('量子电路（Quantum Circuit）可以先理解成一段按顺序执行的程序')
     expect(text).toContain('可以先理解成一段按顺序执行的程序')
     expect(text).toContain('准备量子状态')
     expect(text).toContain('量子门改变状态')
