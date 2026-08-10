@@ -6,7 +6,7 @@ const RECAP = [
   ['qubit', '程序正在操作的数据单位'],
   ['state', '程序此刻保留的量子可能性'],
   ['gate', '改变当前量子状态的操作'],
-  ['circuit', '按顺序执行的一组量子操作'],
+  ['circuit', '按顺序组织这些操作的一段程序'],
   ['measurement', '把量子状态读取为经典结果'],
 ]
 
@@ -49,9 +49,16 @@ export function LearnScreen({ onStart }: LearnScreenProps) {
         <div className="learn-section-heading">
           <div>
             <span>GUIDED PROGRAM</span>
-            <h2 id="program-heading">一个程序，三步看完</h2>
+            <h2 id="program-heading">一个 quantum circuit，三步看完</h2>
           </div>
-          <p>先观察每条指令让状态发生了什么，再认识这些概念的名字。</p>
+          <p>先拿到程序执行的整体框架，再观察每条指令让状态发生了什么。</p>
+        </div>
+        <div className="learn-circuit-anchor">
+          <p><strong>quantum circuit</strong> 可以先理解成一段按顺序执行的程序。</p>
+          <div aria-label="量子电路的三步执行框架">
+            <span>准备状态</span><i>→</i><span>gate 改变状态</span><i>→</i><span>measurement 读取结果</span>
+          </div>
+          <small>下面用一个 qubit，真正按这个顺序运行一遍。</small>
         </div>
 
         <div className="learn-step-list">
@@ -80,7 +87,7 @@ export function LearnScreen({ onStart }: LearnScreenProps) {
               <code className="learn-qasm-line">h q[0];</code>
               <aside className="learn-superposition-note">
                 <strong>这就叫叠加 · superposition</strong>
-                <p>“同时保留多个量子可能性”叫叠加。它不等同于普通程序已经随机选好了一个结果，只是你还不知道。</p>
+                <p>“同时保留多个量子可能性”叫叠加。它不等同于普通程序「已经随机选好了一个结果，只是你还不知道。」</p>
               </aside>
             </div>
             <div className="learn-state-transition" aria-label="H 执行前后的状态变化">
@@ -118,8 +125,8 @@ export function LearnScreen({ onStart }: LearnScreenProps) {
       <section className="learn-recap" aria-labelledby="recap-heading">
         <div className="learn-recap-intro">
           <span>NOW NAME THE PARTS</span>
-          <h2 id="recap-heading">三步连起来，就是一个 quantum circuit</h2>
-          <p>准备状态 → 执行 gate → measurement 读取。现在再回头看术语，它们都能在刚才的程序里找到位置。</p>
+          <h2 id="recap-heading">你刚刚已经读完了第一个 quantum circuit</h2>
+          <p>现在只是给刚才已经看懂的内容补上名字。每个术语，都能在这段程序的执行过程中找到位置。</p>
         </div>
         <dl className="learn-recap-list">
           {RECAP.map(([term, copy]) => (

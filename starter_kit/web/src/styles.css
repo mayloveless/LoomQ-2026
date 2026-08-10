@@ -446,6 +446,13 @@ code, kbd { font-family: var(--mono); }
 /* 13F-2：先用真实程序展示状态变化，再在结尾命名概念。 */
 .learn-guide-link { width: fit-content; display: inline-flex; align-items: center; text-decoration: none; }
 .learn-program { padding: 78px 34px 84px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: #0d1014; scroll-margin-top: 24px; }
+.learn-circuit-anchor { max-width: 1132px; margin: -5px auto 18px; padding: 18px 20px; border: 1px solid #2d4147; border-left: 3px solid #4a8b94; border-radius: 5px; background: #11191d; }
+.learn-circuit-anchor > p { margin: 0; color: #a3aeb8; font-size: 15px; line-height: 1.65; }
+.learn-circuit-anchor > p strong { color: #c7e5e9; font-family: var(--mono); }
+.learn-circuit-anchor > div { display: flex; align-items: center; gap: 12px; margin-top: 13px; color: #c3ccd4; font-size: 14px; }
+.learn-circuit-anchor > div span { padding: 7px 10px; border: 1px solid #2a3940; border-radius: 4px; background: #0d1316; }
+.learn-circuit-anchor > div i { color: #5aa6af; font: normal 14px var(--mono); }
+.learn-circuit-anchor > small { display: block; margin-top: 12px; color: #74818c; font-size: 14px; }
 .learn-step-list { max-width: 1132px; margin: 0 auto; border: 1px solid #29313a; border-radius: 7px; background: #101419; overflow: hidden; }
 .learn-program-step { display: grid; grid-template-columns: 48px minmax(310px, .9fr) minmax(390px, 1.1fr); gap: 24px; padding: 32px 30px 34px 24px; border-bottom: 1px solid #29313a; }
 .learn-program-step:last-child { border-bottom: 0; }
