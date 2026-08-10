@@ -17,6 +17,7 @@ import {
   stateForStep,
   stepTitle,
 } from './viewModel'
+import { LearnScreen } from './Learn'
 
 export type Scenario = {
   id: string
@@ -564,7 +565,7 @@ function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scen
   )
 }
 
-function App() {
+function ExplorerScreen({ onLearn }: { onLearn: () => void }) {
   const [prompt, setPrompt] = useState(SCENARIOS[0].prompt)
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(SCENARIOS[0].id)
   const [result, setResult] = useState<DebugResponse | null>(null)
@@ -708,6 +709,9 @@ function App() {
         <div className={`connection ${loading ? 'loading' : ''}`}>
           <i /> {loading ? '正在生成并验证量子程序…' : 'LOCAL EXPLORATION'}
         </div>
+        <button className="explorer-learn-link" onClick={onLearn} disabled={loading}>
+          Learn · 基础概念
+        </button>
       </header>
 
       <section className={`request-section ${result ? 'result-mode' : loading ? 'loading-mode' : ''}`}>
@@ -911,6 +915,15 @@ function App() {
       )}
     </main>
   )
+}
+
+function App() {
+  const [screen, setScreen] = useState<'learn' | 'explorer'>('learn')
+
+  // Learn 只提供静态心智模型，不触发后端请求。
+  return screen === 'learn'
+    ? <LearnScreen onStart={() => setScreen('explorer')} />
+    : <ExplorerScreen onLearn={() => setScreen('learn')} />
 }
 
 export default App
