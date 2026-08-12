@@ -19,6 +19,8 @@ import {
 } from './viewModel'
 import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
+import { AdvancedCapabilityScreen } from './AdvancedCapability'
+import { GlobalNavigation, type AppScreen } from './Navigation'
 import { SCENARIOS, type Scenario } from './scenarios'
 
 export { SCENARIOS } from './scenarios'
@@ -498,12 +500,10 @@ function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scen
 
 export function ExplorerScreen({
   initialScenarioId,
-  onExperiments,
-  onLearn,
+  onNavigate,
 }: {
   initialScenarioId: string | null
-  onExperiments: () => void
-  onLearn: () => void
+  onNavigate: (screen: AppScreen) => void
 }) {
   const initialScenario = SCENARIOS.find((scenario) => scenario.id === initialScenarioId)
   const [prompt, setPrompt] = useState(initialScenario?.prompt ?? '')
@@ -626,21 +626,15 @@ export function ExplorerScreen({
 
   return (
     <main className="app-shell">
+      <GlobalNavigation current="explorer" onNavigate={onNavigate} />
       <header className="topbar">
-        <div className="brand-mark"><span>L</span></div>
         <div className="brand-copy">
-          <div><strong>LoomQ</strong><span>Quantum Explorer</span><em>MVP</em></div>
+          <div><strong>Quantum Explorer</strong><em>MVP</em></div>
           <p>像阅读代码一样，理解量子程序每一步如何改变状态</p>
         </div>
         <div className={`connection ${loading ? 'loading' : ''}`}>
           <i /> {loading ? '正在生成并验证量子程序…' : 'LOCAL EXPLORATION'}
         </div>
-        <button className="explorer-learn-link" onClick={onExperiments} disabled={loading}>
-          Experiments · 选择实验
-        </button>
-        <button className="explorer-learn-link" onClick={onLearn} disabled={loading}>
-          Learn · 基础概念
-        </button>
       </header>
 
       <section className={`request-section ${result ? 'result-mode' : loading ? 'loading-mode' : ''}`}>
@@ -838,33 +832,39 @@ export function ExplorerScreen({
 }
 
 function App() {
-  const [screen, setScreen] = useState<'learn' | 'experiments' | 'explorer'>('learn')
+  const [screen, setScreen] = useState<AppScreen>('learn')
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null)
+
+  function navigate(nextScreen: AppScreen) {
+    setScreen(nextScreen)
+  }
 
   // 页面选择只传递稳定 prompt，不会自动运行或触发后端请求。
   if (screen === 'learn') {
-    return <LearnScreen onStart={() => setScreen('experiments')} />
+    return <LearnScreen onStart={() => navigate('experiments')} onNavigate={navigate} />
   }
   if (screen === 'experiments') {
     return (
       <ExperimentsScreen
-        onLearn={() => setScreen('learn')}
+        onNavigate={navigate}
         onSelect={(scenario) => {
           setSelectedExperimentId(scenario.id)
-          setScreen('explorer')
+          navigate('explorer')
         }}
         onFreeExplore={() => {
           setSelectedExperimentId(null)
-          setScreen('explorer')
+          navigate('explorer')
         }}
       />
     )
   }
+  if (screen === 'repair' || screen === 'backend') {
+    return <AdvancedCapabilityScreen kind={screen} onNavigate={navigate} />
+  }
   return (
     <ExplorerScreen
       initialScenarioId={selectedExperimentId}
-      onExperiments={() => setScreen('experiments')}
-      onLearn={() => setScreen('learn')}
+      onNavigate={navigate}
     />
   )
 }

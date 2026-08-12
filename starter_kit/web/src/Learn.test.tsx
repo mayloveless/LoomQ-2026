@@ -10,6 +10,10 @@ describe('Task 13F-5 quantum term visual language', () => {
     const markup = renderToStaticMarkup(<App />)
     const text = plainText(markup)
 
+    expect(text).toContain('让开发者先跨过量子计算的专业壁垒')
+    expect(text).toContain('生成、理解、验证和修复量子程序')
+    expect(text).toContain('找到合适的运行平台')
+    expect(text).toContain('30 秒看懂一个量子程序')
     expect(text).toContain('跟着一个量子比特，看懂量子程序怎么运行')
     expect(markup).not.toContain('CIRCUIT STEPS')
     expect(markup).toContain('qreg q[1];')
@@ -19,7 +23,7 @@ describe('Task 13F-5 quantum term visual language', () => {
   })
 
   it('anchors circuit as an ordered program before the three guided steps', () => {
-    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} />)
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
     const text = plainText(markup)
 
     expect(text).toContain('一个量子电路，三步看完')
@@ -32,7 +36,7 @@ describe('Task 13F-5 quantum term visual language', () => {
   })
 
   it('explains superposition from H state changes before recapping concepts', () => {
-    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} />)
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
     const text = plainText(markup)
 
     expect(text).toContain('量子概念')
@@ -49,7 +53,7 @@ describe('Task 13F-5 quantum term visual language', () => {
   })
 
   it('uses static two-level term emphasis without glossary interactions', () => {
-    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} />)
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
 
     expect(markup).toContain('class="quantum-term"')
     expect(markup).toContain('class="learn-concept-label"')
@@ -61,7 +65,7 @@ describe('Task 13F-5 quantum term visual language', () => {
   })
 
   it('keeps the technical explanation collapsed by default', () => {
-    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} />)
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
 
     expect(markup).toContain('想看更技术一点？')
     expect(markup).toContain('<details class="learn-technical">')

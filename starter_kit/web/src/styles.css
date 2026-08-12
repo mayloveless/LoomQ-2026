@@ -26,6 +26,22 @@ button, textarea { font: inherit; }
 button { color: inherit; }
 code, kbd { font-family: var(--mono); }
 
+/* 全站能力导航是 Learn、Experiments、Explorer 与进阶能力页的共同视觉锚点。 */
+.global-header { min-height: 62px; display: flex; align-items: stretch; padding: 0 24px; border-bottom: 1px solid var(--border); background: rgba(12,15,19,.97); }
+.global-brand { display: flex; align-items: center; gap: 10px; padding: 0 20px 0 0; border: 0; background: transparent; cursor: pointer; }
+.global-brand .brand-mark { margin: 0; }
+.global-brand .brand-mark i { font-style: normal; transform: skew(-7deg); }
+.global-brand > strong { color: #eef2f5; font-size: 16px; }
+.global-nav { min-width: 0; display: flex; align-items: stretch; gap: 2px; margin-left: auto; overflow-x: auto; scrollbar-width: none; }
+.global-nav::-webkit-scrollbar { display: none; }
+.global-nav button { position: relative; min-width: 116px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; padding: 0 12px; color: #798590; border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer; white-space: nowrap; }
+.global-nav button:hover { color: #c4cdd5; background: rgba(255,255,255,.018); }
+.global-nav button.active { color: #e4ecef; border-bottom-color: #58c9d8; background: rgba(88,201,216,.045); }
+.global-nav button > span { color: #52606b; font: 11px var(--mono); }
+.global-nav button.active > span { color: #63b8c2; }
+.global-nav button > strong { font-size: 13px; font-weight: 600; }
+.global-nav button > em { padding: 2px 4px; color: #8c7ba8; border: 1px solid rgba(168,138,224,.2); border-radius: 2px; font: normal 10px var(--mono); }
+
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 60% -20%, rgba(74, 112, 128, .1), transparent 31%), var(--bg); }
 .topbar { height: 68px; display: flex; align-items: center; padding: 0 26px; border-bottom: 1px solid var(--border); background: #0d1014; }
 .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; margin-right: 12px; border: 1px solid #3b8691; border-radius: 6px; color: var(--cyan-bright); font-family: var(--mono); font-weight: 800; box-shadow: inset 0 0 0 3px rgba(88,201,216,.06); }
@@ -61,7 +77,7 @@ code, kbd { font-family: var(--mono); }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.75); } }
 
 .workspace { display: grid; grid-template-columns: 235px minmax(400px, .95fr) minmax(430px, 1.05fr); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 242px); min-height: 450px; max-width: 1600px; margin: 0 auto; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
-.workspace.result-workspace { height: calc(100vh - 165px); }
+.workspace.result-workspace { height: calc(100vh - 227px); }
 .panel { background: var(--panel); }
 .sidebar { border-right: 1px solid var(--border); padding: 17px 0; overflow-y: auto; }
 .section-title { height: 22px; padding: 0 15px; display: flex; align-items: center; justify-content: space-between; color: #7e8997; font: 10px var(--mono); letter-spacing: .1em; }
@@ -288,8 +304,8 @@ code, kbd { font-family: var(--mono); }
 .context-item p { margin: 7px 0 0; color: #8995a1; font-size: 10px; line-height: 1.5; }
 .focus-item { background: rgba(88,201,216,.025); }
 .focus-item span { color: #69a5ad; }
-.empty-workspace { grid-template-columns: 235px 1fr; grid-template-rows: minmax(450px, calc(100vh - 145px)); height: auto; }
-.empty-workspace.loading-workspace { grid-template-rows: minmax(450px, calc(100vh - 145px)); }
+.empty-workspace { grid-template-columns: 235px 1fr; grid-template-rows: minmax(450px, calc(100vh - 207px)); height: auto; }
+.empty-workspace.loading-workspace { grid-template-rows: minmax(450px, calc(100vh - 207px)); }
 .empty-rail { padding: 25px 18px; border-right: 1px solid var(--border); }
 .rail-label { color: #5f6975; font: 9px var(--mono); letter-spacing: .1em; }
 .skeleton-line { width: 76%; height: 8px; margin-top: 22px; border-radius: 2px; background: #1b2027; }
@@ -429,14 +445,51 @@ code, kbd { font-family: var(--mono); }
 .experiments-free button { padding: 9px 11px; color: #8e9aa5; border: 1px solid transparent; background: transparent; font-size: 14px; cursor: pointer; }
 .experiments-free button:hover { color: #cbd4db; border-color: #35404a; }
 
+/* Repair / Backend 仅展示明确的未来能力位置，不伪造可操作界面。 */
+.advanced-shell { min-height: 100vh; color: var(--text); background: radial-gradient(circle at 78% 15%, rgba(168,138,224,.07), transparent 29%), #0a0c10; }
+.advanced-hero { max-width: 1120px; min-height: calc(100vh - 62px); display: grid; grid-template-columns: minmax(0, .9fr) minmax(430px, 1.1fr); align-items: center; gap: 78px; margin: 0 auto; padding: 72px 34px 90px; }
+.advanced-copy > span { color: #7f6e9e; font: 13px var(--mono); letter-spacing: .13em; }
+.advanced-status { width: fit-content; margin-top: 24px; padding: 7px 10px; color: #b8a5d6; border: 1px solid rgba(168,138,224,.25); border-radius: 3px; background: rgba(168,138,224,.06); font-size: 13px; }
+.advanced-copy h1 { margin: 18px 0 17px; color: #e7e9ed; font-size: clamp(38px, 4vw, 54px); line-height: 1.16; letter-spacing: -.04em; }
+.advanced-copy p { margin: 0; color: #929ca7; font-size: 16px; line-height: 1.78; }
+.advanced-flow { padding: 24px; border: 1px solid #2d333c; border-radius: 6px; background: #101419; }
+.advanced-flow > span { color: #716385; font: 12px var(--mono); letter-spacing: .12em; }
+.advanced-flow ol { margin: 20px 0 0; padding: 0; list-style: none; }
+.advanced-flow li { position: relative; min-height: 60px; display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 12px; border-bottom: 1px solid #252c34; }
+.advanced-flow li em { color: #695d7d; font: normal 12px var(--mono); }
+.advanced-flow li strong { color: #bdc4cc; font-size: 15px; font-weight: 550; }
+.advanced-flow li i { position: absolute; right: 4px; color: #545d68; font: normal 14px var(--mono); }
+.advanced-flow > p { margin: 19px 0 0; color: #68737e; font-size: 13px; line-height: 1.65; }
+
 @media (max-width: 900px) {
+  .global-header { padding-inline: 12px; }
+  .global-brand { padding-right: 12px; }
+  .global-brand > strong { display: none; }
+  .global-nav button { min-width: 102px; padding-inline: 9px; }
   .experiments-grid { grid-template-columns: 1fr; }
   .experiment-card { min-height: 590px; }
   .experiments-free { margin-inline: 34px; }
+  .learn-landing { grid-template-columns: 1fr; min-height: auto; gap: 48px; }
+  .advanced-hero { grid-template-columns: 1fr; min-height: auto; }
 }
 
 /* Learn 是独立的新手 screen，只复用 Explorer 的深色语言。 */
 .learn-shell { min-height: 100vh; color: var(--text); background: radial-gradient(circle at 72% 8%, rgba(88,201,216,.09), transparent 25%), radial-gradient(circle at 18% 42%, rgba(168,138,224,.06), transparent 24%), #0a0c10; }
+.learn-landing { max-width: 1200px; min-height: calc(100vh - 62px); display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr); align-items: center; gap: 74px; margin: 0 auto; padding: 70px 34px 76px; }
+.learn-landing-copy h1 { margin: 17px 0 20px; color: #f0f3f6; font-size: clamp(42px, 4.6vw, 64px); line-height: 1.1; letter-spacing: -.05em; }
+.learn-landing-copy > p { max-width: 690px; margin: 0; color: #9aa5b0; font-size: 17px; line-height: 1.78; }
+.learn-landing-copy > small { display: block; margin-top: 13px; color: #71808b; font-size: 14px; }
+.learn-landing-actions { display: flex; align-items: center; gap: 15px; margin-top: 29px; }
+.learn-landing-actions .learn-primary { margin-top: 0; }
+.learn-landing-secondary { min-height: 44px; padding: 0 12px; color: #8f9ba6; border: 1px solid transparent; background: transparent; font-size: 14px; cursor: pointer; }
+.learn-landing-secondary:hover { color: #d4dbe1; border-color: #36414b; }
+.learn-product-flow { padding: 24px; border: 1px solid #2c353e; border-radius: 7px; background: rgba(14,18,22,.94); box-shadow: 0 28px 70px rgba(0,0,0,.24); }
+.learn-product-flow > span { display: block; color: #5c7e85; font: 12px var(--mono); letter-spacing: .12em; }
+.learn-product-flow > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; padding: 16px; border: 1px solid #29343c; border-left: 2px solid #4f9099; border-radius: 4px; background: #11171b; }
+.learn-product-flow > div strong { color: #cad3da; font-size: 15px; }
+.learn-product-flow > div code { color: #729da4; font-size: 12px; }
+.learn-product-flow > i { display: block; height: 34px; padding: 8px 0 0 18px; color: #5f9299; font: normal 14px var(--mono); }
+.learn-product-flow > i em { margin-left: 8px; color: #796b96; font-style: normal; font-size: 11px; letter-spacing: .1em; }
 .learn-topbar { height: 68px; display: flex; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--border); background: rgba(13,16,20,.94); }
 .learn-brand > div { display: flex; align-items: center; gap: 9px; }
 .learn-brand strong { color: #f2f5f8; font-size: 16px; }
@@ -445,7 +498,7 @@ code, kbd { font-family: var(--mono); }
 .learn-skip { margin-left: auto; padding: 7px 10px; color: #8995a2; border: 1px solid transparent; background: transparent; font-size: 14px; cursor: pointer; }
 .learn-skip:hover { color: #d2d9e1; border-color: #333c47; }
 .learn-skip span, .learn-primary span { margin-left: 6px; color: var(--cyan); }
-.learn-hero { max-width: 1200px; min-height: 500px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); align-items: center; gap: 70px; margin: 0 auto; padding: 72px 34px 66px; }
+.learn-hero { max-width: 1200px; min-height: 500px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); align-items: center; gap: 70px; margin: 0 auto; padding: 72px 34px 66px; border-top: 1px solid var(--border); scroll-margin-top: 18px; }
 .learn-eyebrow, .learn-section-heading > div > span, .learn-bottom-cta > span { color: #65aab3; font: 14px var(--mono); letter-spacing: .15em; }
 .learn-hero h1 { margin: 15px 0 20px; color: #eef2f6; font-size: clamp(38px, 4.1vw, 58px); font-weight: 690; line-height: 1.12; letter-spacing: -.045em; }
 .learn-hero-copy > p { max-width: 640px; margin: 0; color: #8d98a5; font-size: 17px; line-height: 1.75; }

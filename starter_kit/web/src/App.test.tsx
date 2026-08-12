@@ -56,21 +56,23 @@ describe('Task 13D scenario entry', () => {
 describe('Task 13G Explorer entry', () => {
   it('prefills the selected stable prompt without rendering scenario pickers', () => {
     const markup = renderToStaticMarkup(
-      <ExplorerScreen initialScenarioId="search" onExperiments={() => undefined} onLearn={() => undefined} />,
+      <ExplorerScreen initialScenarioId="search" onNavigate={() => undefined} />,
     )
 
     expect(markup).toContain(
       SCENARIOS.find((scenario) => scenario.id === 'search')!.prompt.replaceAll('>', '&gt;'),
     )
-    expect(markup).toContain('Experiments · 选择实验')
-    expect(markup).toContain('Learn · 基础概念')
+    expect(markup).toContain('aria-current="page"')
+    expect(markup).toContain('<strong>Explorer</strong>')
+    expect(markup).not.toContain('Experiments · 选择实验')
+    expect(markup).not.toContain('Learn · 基础概念')
     expect(markup).not.toContain('场景示例')
     expect(markup).not.toContain('切换示例')
   })
 
   it('opens free exploration with an empty prompt', () => {
     const markup = renderToStaticMarkup(
-      <ExplorerScreen initialScenarioId={null} onExperiments={() => undefined} onLearn={() => undefined} />,
+      <ExplorerScreen initialScenarioId={null} onNavigate={() => undefined} />,
     )
 
     expect(markup).toMatch(/<textarea[^>]*><\/textarea>/)

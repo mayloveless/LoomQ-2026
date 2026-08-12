@@ -6,7 +6,7 @@ import { SCENARIOS } from './scenarios'
 describe('Task 13G experiments screen', () => {
   it('shows only Bell, Grover, and Phase as three distinct formal experiments', () => {
     const markup = renderToStaticMarkup(
-      <ExperimentsScreen onLearn={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
+      <ExperimentsScreen onNavigate={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
     )
 
     expect(markup.match(/class="experiment-card /g)).toHaveLength(3)
@@ -34,7 +34,7 @@ describe('Task 13G experiments screen', () => {
 
   it('keeps free exploration visually separate from formal experiments', () => {
     const markup = renderToStaticMarkup(
-      <ExperimentsScreen onLearn={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
+      <ExperimentsScreen onNavigate={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
     )
 
     expect(markup).toContain('class="experiments-free"')

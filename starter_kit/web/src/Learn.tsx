@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
+import { GlobalNavigation, type AppScreen } from './Navigation'
 
 type LearnScreenProps = {
   onStart: () => void
+  onNavigate: (screen: AppScreen) => void
 }
 
 type QuantumTermProps = {
@@ -22,19 +24,35 @@ const RECAP = [
   ['测量', '把量子状态读取为经典结果'],
 ]
 
-export function LearnScreen({ onStart }: LearnScreenProps) {
+export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
   return (
     <main className="learn-shell">
-      <header className="learn-topbar">
-        <div className="brand-mark"><span>L</span></div>
-        <div className="learn-brand">
-          <div><strong>LoomQ</strong><span>Learn</span></div>
-          <p>开发者的量子程序入门</p>
-        </div>
-        <button className="learn-skip" onClick={onStart}>跳过入门，选择实验 <span>→</span></button>
-      </header>
+      <GlobalNavigation current="learn" onNavigate={onNavigate} />
 
-      <section className="learn-hero">
+      <section className="learn-landing">
+        <div className="learn-landing-copy">
+          <span className="learn-eyebrow">AI-NATIVE QUANTUM DEVELOPMENT</span>
+          <h1>让开发者先跨过<br />量子计算的专业壁垒</h1>
+          <p>面向有编程基础、但没有量子专业背景的开发者。LoomQ 借助 AI 帮你生成、理解、验证和修复量子程序，并找到合适的运行平台。</p>
+          <small>不用先成为量子专家，也能完成自己的第一次量子实验。</small>
+          <div className="learn-landing-actions">
+            <a className="learn-primary learn-guide-link" href="#learn-quickstart">30 秒看懂一个量子程序 <span>↓</span></a>
+            <button className="learn-landing-secondary" onClick={onStart}>直接选择实验 <span>→</span></button>
+          </div>
+        </div>
+        <div className="learn-product-flow" aria-label="LoomQ 从开发意图到运行平台的能力链路">
+          <span>YOUR INTENT</span>
+          <div><strong>用自然语言描述目标</strong><code>生成 · 理解</code></div>
+          <i>↓ <em>AI</em></i>
+          <span>QUANTUM PROGRAM</span>
+          <div><strong>获得可读的量子程序</strong><code>验证 · 修复</code></div>
+          <i>↓ <em>SELECT</em></i>
+          <span>BACKEND</span>
+          <div><strong>找到合适的运行平台</strong><code>约束 · 推荐</code></div>
+        </div>
+      </section>
+
+      <section className="learn-hero" id="learn-quickstart">
         <div className="learn-hero-copy">
           <span className="learn-eyebrow">ONE QUBIT · THREE STEPS</span>
           <h1>跟着一个<QuantumTerm english="">量子比特</QuantumTerm>，<br />看懂量子程序怎么运行</h1>

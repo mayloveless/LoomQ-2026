@@ -1,7 +1,8 @@
 import { SCENARIOS, type Scenario } from './scenarios'
+import { GlobalNavigation, type AppScreen } from './Navigation'
 
 type ExperimentsScreenProps = {
-  onLearn: () => void
+  onNavigate: (screen: AppScreen) => void
   onSelect: (scenario: Scenario) => void
   onFreeExplore: () => void
 }
@@ -98,17 +99,10 @@ function ExperimentVisualization({ id }: { id: string }) {
   return <PhaseVisualization />
 }
 
-export function ExperimentsScreen({ onLearn, onSelect, onFreeExplore }: ExperimentsScreenProps) {
+export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: ExperimentsScreenProps) {
   return (
     <main className="experiments-shell">
-      <header className="experiments-topbar">
-        <div className="brand-mark"><span>L</span></div>
-        <div className="experiments-brand">
-          <div><strong>LoomQ</strong><span>Experiments</span></div>
-          <p>从一个现象开始探索量子程序</p>
-        </div>
-        <button className="experiments-back" onClick={onLearn}>← 返回 Learn</button>
-      </header>
+      <GlobalNavigation current="experiments" onNavigate={onNavigate} />
 
       <section className="experiments-hero">
         <span>QUANTUM EXPERIMENTS · 03</span>
