@@ -447,7 +447,7 @@ export function ScenarioContext({ scenario }: { scenario: Scenario }) {
   )
 }
 
-function LoadingProcess() {
+export function LoadingProcess() {
   return (
     <div className="loading-process" aria-label="LoomQ 正在准备量子程序">
       <div className="loading-process-heading">
@@ -470,28 +470,40 @@ function LoadingProcess() {
   )
 }
 
-function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scenario?: Scenario }) {
-  return (
-    <div className={`workspace empty-workspace ${loading ? 'loading-workspace' : ''}`}>
-      <div className="empty-rail panel">
-        <span className="rail-label">QUANTUM EXPLORATION</span>
-        <div className="skeleton-line long" />
-        <div className="skeleton-line" />
-        <div className="skeleton-line short" />
+export function EmptyWorkspace({ loading = false, scenario }: { loading?: boolean; scenario?: Scenario }) {
+  if (loading) {
+    return (
+      <div className="workspace empty-workspace loading-workspace">
+        <div className="empty-rail panel" aria-hidden="true">
+          <span className="rail-label">QUANTUM EXPLORATION</span>
+          <div className="skeleton-line long" />
+          <div className="skeleton-line" />
+          <div className="skeleton-line short" />
+        </div>
+        <div className="empty-main panel"><LoadingProcess /></div>
       </div>
+    )
+  }
+
+  return (
+    <div className="workspace idle-workspace">
       <div className="empty-main panel">
-        {loading ? <LoadingProcess /> : scenario ? (
+        {scenario ? (
           <>
-            <ScenarioContext scenario={scenario} />
-            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 运行量子程序</span>
+            <div className="idle-status ready">
+              <span>{scenario.tag} · READY</span>
+              <h2>{scenario.id === 'bell' ? 'Bell 实验已准备好' : scenario.id === 'search' ? 'Grover 搜索实验已准备好' : scenario.id === 'phase' ? '相位实验已准备好' : '实验已准备好'}</h2>
+              <p>LoomQ 会先生成并验证量子程序，再带你逐步查看状态变化。</p>
+              <strong>尚未运行 · 点击上方“运行量子程序”开始</strong>
+            </div>
           </>
         ) : (
-          <>
+          <div className="idle-status free">
             <div className="empty-icon">⌁</div>
-            <h2>准备探索一个量子程序</h2>
-            <p>在上方描述你的目标，LoomQ 会运行程序并呈现每一步的状态变化。</p>
-            <span className="keyboard-hint"><kbd>⌘</kbd><kbd>↵</kbd> 运行量子程序</span>
-          </>
+            <h2>描述你想探索的量子程序</h2>
+            <p>例如：让两个量子比特形成 Bell 态并测量。</p>
+            <strong>在上方输入自然语言实验需求，再点击“运行量子程序”。</strong>
+          </div>
         )}
       </div>
     </div>

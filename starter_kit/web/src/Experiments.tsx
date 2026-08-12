@@ -110,6 +110,14 @@ export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: Exper
         <p>不用先理解算法。从一个现象开始，在 Explorer 里一步步看量子程序怎样改变状态。</p>
       </section>
 
+      <section className="experiments-free">
+        <div>
+          <span>已经有自己的想法？</span>
+          <p>直接描述你想探索的量子程序。不限于下面三个示例，Explorer 支持直接输入自然语言实验需求。</p>
+        </div>
+        <button onClick={onFreeExplore}>自由探索 <span>→</span></button>
+      </section>
+
       <section className="experiments-grid" aria-label="正式量子实验">
         {EXPERIMENTS.map((experiment) => {
           const scenario = SCENARIOS.find((item) => item.id === experiment.id)
@@ -131,10 +139,6 @@ export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: Exper
         })}
       </section>
 
-      <section className="experiments-free">
-        <div><span>FREE EXPLORATION</span><p>已经有自己的问题？直接描述你想探索的量子程序。</p></div>
-        <button onClick={onFreeExplore}>自由探索 <span>→</span></button>
-      </section>
     </main>
   )
 }

@@ -32,12 +32,18 @@ describe('Task 13G experiments screen', () => {
     ])
   })
 
-  it('keeps free exploration visually separate from formal experiments', () => {
+  it('places free exploration between the hero and formal experiments without duplicating it', () => {
     const markup = renderToStaticMarkup(
       <ExperimentsScreen onNavigate={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
     )
 
-    expect(markup).toContain('class="experiments-free"')
-    expect(markup).toContain('已经有自己的问题？')
+    const freeEntryIndex = markup.indexOf('class="experiments-free"')
+    const experimentGridIndex = markup.indexOf('class="experiments-grid"')
+
+    expect(freeEntryIndex).toBeGreaterThan(markup.indexOf('class="experiments-hero"'))
+    expect(freeEntryIndex).toBeLessThan(experimentGridIndex)
+    expect(markup.match(/class="experiments-free"/g)).toHaveLength(1)
+    expect(markup).toContain('已经有自己的想法？')
+    expect(markup).toContain('Explorer 支持直接输入自然语言实验需求')
   })
 })

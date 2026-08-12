@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
+import { ConceptCard, EmptyWorkspace, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -68,6 +68,10 @@ describe('Task 13G Explorer entry', () => {
     expect(markup).not.toContain('Learn · 基础概念')
     expect(markup).not.toContain('场景示例')
     expect(markup).not.toContain('切换示例')
+    expect(markup).toContain('Grover 搜索实验已准备好')
+    expect(markup).toContain('尚未运行 · 点击上方“运行量子程序”开始')
+    expect(markup).not.toContain('class="loading-process"')
+    expect(markup).not.toContain('skeleton-line')
   })
 
   it('opens free exploration with an empty prompt', () => {
@@ -76,6 +80,23 @@ describe('Task 13G Explorer entry', () => {
     )
 
     expect(markup).toMatch(/<textarea[^>]*><\/textarea>/)
-    expect(markup).toContain('在上方描述你的目标')
+    expect(markup).toContain('描述你想探索的量子程序')
+    expect(markup).toContain('在上方输入自然语言实验需求')
+    expect(markup).not.toContain('class="loading-process"')
+    expect(markup).not.toContain('skeleton-line')
+  })
+
+  it('shows staged preparation only while Explorer is loading', () => {
+    const idleMarkup = renderToStaticMarkup(
+      <EmptyWorkspace loading={false} scenario={SCENARIOS[0]} />,
+    )
+    const loadingMarkup = renderToStaticMarkup(
+      <EmptyWorkspace loading scenario={SCENARIOS[0]} />,
+    )
+
+    expect(idleMarkup).not.toContain('class="loading-process"')
+    expect(idleMarkup).not.toContain('skeleton-line')
+    expect(loadingMarkup).toContain('class="loading-process"')
+    expect(loadingMarkup).toContain('skeleton-line')
   })
 })
