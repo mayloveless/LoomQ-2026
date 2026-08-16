@@ -12,6 +12,7 @@ from loomq.backend_selector import (
     BackendCapabilityError,
     BackendConstraints,
     load_backends,
+    load_capability_version,
     select_backends,
 )
 
@@ -121,6 +122,9 @@ class BackendSelectorTests(unittest.TestCase):
             finally:
                 os.chdir(original_cwd)
         self.assertEqual(loaded[0].id, "spinq_taurus_simulator")
+
+    def test_capability_version_comes_from_the_same_json_snapshot(self):
+        self.assertEqual(load_capability_version(), "2026-07")
 
     def test_missing_required_capability_field_fails_clearly(self):
         malformed = {

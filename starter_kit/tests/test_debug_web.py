@@ -9,6 +9,7 @@ from unittest import mock
 from loomq.debug_trace import TraceRecorder
 from loomq.debug_web import (
     DebugRequestHandler,
+    build_backend_payload,
     build_debug_payload,
     build_repair_payload,
 )
@@ -16,6 +17,27 @@ from loomq.teaching_explainer import TeachingExplanation, TeachingStep
 
 
 class DebugWebSerializationTests(unittest.TestCase):
+    @staticmethod
+    def backend_events(constraints, backend_ids):
+        recorder = TraceRecorder()
+        recorder.emit(
+            layer="agent",
+            stage="backend_constraints",
+            executor="llm",
+            status="ok",
+            summary="已提取后端约束。",
+            data=constraints,
+        )
+        recorder.emit(
+            layer="agent",
+            stage="backend_selected",
+            executor="local",
+            status="ok",
+            summary="本地能力表筛选完成。",
+            data={"backend_ids": backend_ids, "no_match": not backend_ids},
+        )
+        return recorder.events
+
     def test_payload_reuses_shared_builder_and_serializes_events(self):
         recorder = TraceRecorder()
         event = recorder.emit(
@@ -94,6 +116,99 @@ class DebugWebSerializationTests(unittest.TestCase):
             payload["input_validation"], {"status": "ok", "diagnostic": None}
         )
         self.assertNotIn("semantic", payload["input_validation"])
+
+    def test_backend_payload_reuses_trace_and_explains_local_selection(self):
+        constraints = {
+            "min_qubits": 20,
+            "require_qpu": None,
+            "require_no_queue": True,
+            "cost_policy": "unspecified",
+            "allow_account_required": False,
+        }
+        backend_ids = [
+            "spinq_taurus_simulator",
+            "originq_local_simulator",
+            "braket_local_simulator",
+        ]
+        events = self.backend_events(constraints, backend_ids)
+        builder = mock.Mock(return_value=("reply", events))
+
+        payload = build_backend_payload("至少 20 比特且零排队", debug_builder=builder)
+
+        builder.assert_called_once_with("至少 20 比特且零排队")
+        self.assertEqual(
+            [backend["id"] for backend in payload["matches"]], backend_ids
+        )
+        self.assertEqual(payload["capability_version"], "2026-07")
+        self.assertFalse(payload["no_match"])
+        self.assertEqual(payload["relaxation_categories"], [])
+        self.assertEqual(
+            payload["matches"][0]["match_reasons"],
+            ["24 qubits ≥ 需要的 20", "能力表队列分类为 none", "能力表标记为无需账号"],
+        )
+        excluded = {backend["id"]: backend for backend in payload["excluded"]}
+        self.assertIn("只有 8 qubits，不满足至少 20 qubits", excluded["spinq_cloud_qpu"]["exclusion_reasons"])
+        self.assertIn("能力表标记为需要账号", excluded["braket_cloud"]["exclusion_reasons"])
+
+    def test_backend_payload_reports_no_match_without_inventing_candidate(self):
+        constraints = {
+            "min_qubits": 73,
+            "require_qpu": True,
+            "require_no_queue": True,
+            "cost_policy": "free_only",
+            "allow_account_required": False,
+        }
+        payload = build_backend_payload(
+            "73 比特真机且免费",
+            debug_builder=mock.Mock(
+                return_value=("reply", self.backend_events(constraints, []))
+            ),
+        )
+
+        self.assertTrue(payload["no_match"])
+        self.assertEqual(payload["matches"], [])
+        self.assertEqual(
+            payload["relaxation_categories"],
+            ["比特数", "真机", "零排队", "费用", "账号"],
+        )
+        self.assertEqual(len(payload["excluded"]), 6)
+        self.assertTrue(
+            all(backend["exclusion_reasons"] for backend in payload["excluded"])
+        )
+
+    def test_backend_payload_rejects_trace_that_disagrees_with_local_selector(self):
+        constraints = {
+            "min_qubits": 20,
+            "require_qpu": None,
+            "require_no_queue": True,
+            "cost_policy": "unspecified",
+            "allow_account_required": False,
+        }
+        with self.assertRaisesRegex(RuntimeError, "does not match local selector"):
+            build_backend_payload(
+                "prompt",
+                debug_builder=mock.Mock(
+                    return_value=(
+                        "reply",
+                        self.backend_events(constraints, ["originq_wukong"]),
+                    )
+                ),
+            )
+
+    def test_backend_payload_rejects_incomplete_constraint_trace(self):
+        incomplete = {
+            "min_qubits": 20,
+            "require_qpu": None,
+            "require_no_queue": True,
+            "cost_policy": "unspecified",
+        }
+        with self.assertRaisesRegex(RuntimeError, "constraints trace is incomplete"):
+            build_backend_payload(
+                "prompt",
+                debug_builder=mock.Mock(
+                    return_value=("reply", self.backend_events(incomplete, []))
+                ),
+            )
 
     def test_explainer_receives_only_final_validated_qasm_and_real_circuit(self):
         recorder = TraceRecorder()
@@ -227,6 +342,55 @@ class DebugWebHTTPTests(unittest.TestCase):
         build_payload.assert_called_once_with(
             "保持零态", "OPENQASM 2.0;\nqreg q[1]"
         )
+
+    @mock.patch("loomq.debug_web.build_backend_payload")
+    def test_backend_endpoint_requires_prompt(self, build_payload):
+        body = json.dumps({"prompt": "  "}).encode("utf-8")
+        handler = self.make_handler(path="/api/backend", body=body)
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"error": "请输入有效的后端要求。"},
+        )
+        build_payload.assert_not_called()
+
+    @mock.patch("loomq.debug_web.build_backend_payload")
+    def test_backend_endpoint_returns_deterministic_payload(self, build_payload):
+        build_payload.return_value = {
+            "constraints": {},
+            "matches": [],
+            "excluded": [],
+            "no_match": True,
+            "relaxation_categories": [],
+            "capability_version": "2026-07",
+            "events": [],
+        }
+        body = json.dumps({"prompt": "需要真机"}).encode("utf-8")
+        handler = self.make_handler(path="/api/backend", body=body)
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        build_payload.assert_called_once_with("需要真机")
+
+    @mock.patch("loomq.debug_web.build_backend_payload")
+    def test_backend_errors_return_only_fixed_safe_message(self, build_payload):
+        build_payload.side_effect = RuntimeError(
+            "secret-key at /Users/private/project and raw model response"
+        )
+        body = json.dumps({"prompt": "需要真机"}).encode("utf-8")
+        handler = self.make_handler(path="/api/backend", body=body)
+
+        handler.do_POST()
+        serialized = handler.wfile.getvalue().decode("utf-8")
+
+        handler.send_response.assert_called_once_with(HTTPStatus.INTERNAL_SERVER_ERROR)
+        self.assertIn("这次推荐没有完成", serialized)
+        self.assertNotIn("secret-key", serialized)
+        self.assertNotIn("/Users/", serialized)
 
     @mock.patch("loomq.debug_web.build_debug_payload")
     def test_errors_return_only_fixed_safe_message(self, build_payload):

@@ -137,6 +137,22 @@ def load_backends(path: str | Path | None = None) -> tuple[Backend, ...]:
     return backends
 
 
+def load_capability_version(path: str | Path | None = None) -> str:
+    """从同一份官方 JSON 事实源读取能力表快照版本。"""
+    capabilities_path = Path(path) if path is not None else _DEFAULT_CAPABILITIES_PATH
+    try:
+        with capabilities_path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        raise BackendCapabilityError("unable to load backend capabilities JSON") from None
+    version = payload.get("version") if isinstance(payload, dict) else None
+    if not isinstance(version, str) or not version.strip():
+        raise BackendCapabilityError(
+            "backend capabilities JSON must contain a non-empty version"
+        )
+    return version
+
+
 def select_backends(
     constraints: BackendConstraints,
     *,
@@ -172,5 +188,6 @@ __all__ = [
     "BackendCapabilityError",
     "BackendConstraints",
     "load_backends",
+    "load_capability_version",
     "select_backends",
 ]

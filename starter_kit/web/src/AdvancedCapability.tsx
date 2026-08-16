@@ -14,6 +14,37 @@ export type RepairResponse = {
   events: TraceEvent[]
 }
 
+type BackendConstraints = {
+  min_qubits: number | null
+  require_qpu: boolean | null
+  require_no_queue: boolean
+  cost_policy: 'free_only' | 'free_or_quota' | 'paid_allowed' | 'unspecified'
+  allow_account_required: boolean | null
+}
+
+type BackendFact = {
+  id: string
+  name: string
+  kind: string
+  max_qubits: number
+  queue: string
+  cost: string
+  requires_account: boolean
+}
+
+type MatchedBackend = BackendFact & { match_reasons: string[] }
+type ExcludedBackend = BackendFact & { exclusion_reasons: string[] }
+
+export type BackendResponse = {
+  constraints: BackendConstraints
+  matches: MatchedBackend[]
+  excluded: ExcludedBackend[]
+  no_match: boolean
+  relaxation_categories: string[]
+  capability_version: string
+  events: TraceEvent[]
+}
+
 const BROKEN_BELL_QASM = `OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2]
@@ -23,13 +54,11 @@ cx q[0],q[1];
 measure q[0] -> c[0];
 measure q[1] -> c[1];`
 
-const BACKEND_CONTENT = {
-  eyebrow: '05 · SELECT & RUN',
-  title: '选择合适的运行平台',
-  description: '不需要先熟悉每家量子平台。告诉 LoomQ 你的 qubit、真机、排队和成本要求，它会提取约束并推荐合适后端。',
-  steps: ['描述运行要求', 'AI 提取约束', '本地能力表筛选', '给出推荐与原因'],
-  note: '这里将解释推荐依据；当前不会展示虚构的平台状态、队列时间或价格。',
-} as const
+const BACKEND_EXAMPLES = [
+  '至少 20 个 qubit，不想排队，也不想注册账号。',
+  '我想用真实量子硬件，8 个 qubit 就够，可以排队，也可以使用免费额度并注册账号。',
+  '只想本地免费运行，不需要真实量子硬件。',
+]
 
 function latestEvent(events: TraceEvent[], stage: string): TraceEvent | undefined {
   return [...events].reverse().find((event) => event.layer === 'agent' && event.stage === stage)
@@ -180,23 +209,155 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
   )
 }
 
-function BackendPlaceholder({ onNavigate }: { onNavigate: (screen: AppScreen) => void }) {
+function kindLabel(kind: string): string {
+  return kind === 'qpu' ? '真机 QPU' : kind === 'simulator' ? '模拟器' : kind === 'cloud' ? '云端' : kind
+}
+
+function queueLabel(queue: string): string {
+  return queue === 'none' ? 'none · 无排队' : queue === 'hours' ? 'hours · 小时级' : queue === 'minutes_to_hours' ? 'minutes_to_hours · 分钟至小时' : queue
+}
+
+function costLabel(cost: string): string {
+  return cost === 'free' ? 'free · 免费' : cost === 'free_quota' ? 'free_quota · 免费额度' : cost === 'paid' ? 'paid · 付费' : cost
+}
+
+function constraintRows(constraints: BackendConstraints): Array<[string, string]> {
+  const costLabels: Record<BackendConstraints['cost_policy'], string> = {
+    free_only: '仅完全免费',
+    free_or_quota: '免费或免费额度',
+    paid_allowed: '允许付费',
+    unspecified: '未限制成本策略',
+  }
+  return [
+    ['最少 qubits', constraints.min_qubits == null ? '未指定' : `至少 ${constraints.min_qubits}`],
+    ['设备类型', constraints.require_qpu == null ? '未限制设备类型' : constraints.require_qpu ? '必须使用真机 QPU' : '不要求必须为真机'],
+    ['队列要求', constraints.require_no_queue ? '要求零排队' : '未要求零排队'],
+    ['成本策略', costLabels[constraints.cost_policy]],
+    ['账号要求', constraints.allow_account_required == null ? '未限制账号要求' : constraints.allow_account_required ? '允许需要账号的后端' : '不允许需要账号'],
+  ]
+}
+
+function BackendFacts({ backend }: { backend: BackendFact }) {
   return (
-    <main className="advanced-shell">
-      <GlobalNavigation current="backend" onNavigate={onNavigate} />
-      <section className="advanced-hero">
-        <div className="advanced-copy"><span>{BACKEND_CONTENT.eyebrow}</span><div className="advanced-status">进阶能力 · 即将接入 Web</div><h1>{BACKEND_CONTENT.title}</h1><p>{BACKEND_CONTENT.description}</p></div>
-        <div className="advanced-flow" aria-label={`${BACKEND_CONTENT.title}未来流程`}>
-          <span>PLANNED FLOW</span>
-          <ol>{BACKEND_CONTENT.steps.map((step, index) => <li key={step}><em>{String(index + 1).padStart(2, '0')}</em><strong>{step}</strong>{index < BACKEND_CONTENT.steps.length - 1 && <i>→</i>}</li>)}</ol>
-          <p>{BACKEND_CONTENT.note}</p>
+    <dl className="backend-facts">
+      <div><dt>类型</dt><dd>{kindLabel(backend.kind)}</dd></div>
+      <div><dt>最大 qubits</dt><dd>{backend.max_qubits}</dd></div>
+      <div><dt>队列分类</dt><dd>{queueLabel(backend.queue)}</dd></div>
+      <div><dt>成本分类</dt><dd>{costLabel(backend.cost)}</dd></div>
+      <div><dt>账号</dt><dd>{backend.requires_account ? '需要账号' : '无需账号'}</dd></div>
+    </dl>
+  )
+}
+
+export function BackendResults({ response, onModify }: { response: BackendResponse; onModify: () => void }) {
+  return (
+    <div className="backend-result-content">
+      <section className="backend-constraints">
+        <header><span>LoomQ 理解到的约束</span><small>来自 backend_constraints Trace</small></header>
+        <div>{constraintRows(response.constraints).map(([label, value]) => <p key={label}><span>{label}</span><strong>{value}</strong></p>)}</div>
+        <footer>AI 只负责理解你的要求；具体后端由本地能力表确定。</footer>
+      </section>
+
+      <section className={`backend-matches${response.no_match ? ' no-match' : ''}`}>
+        <header>
+          <div>
+            <span>满足条件的后端</span>
+            <h2>{response.no_match ? '当前能力表中没有同时满足全部条件的后端。' : `找到 ${response.matches.length} 个满足全部条件的后端`}</h2>
+          </div>
+          {response.no_match && <button type="button" onClick={onModify}>修改要求后重新分析</button>}
+        </header>
+        {!response.no_match && <p className="backend-order-note">以下为全部匹配项，按官方能力表顺序展示；当前没有排名。</p>}
+        {response.no_match && <p className="backend-relaxation">可以考虑放宽：{response.relaxation_categories.join('、')}。LoomQ 不会自动修改你的要求。</p>}
+        <div className="backend-match-list">
+          {response.matches.map((backend) => (
+            <article className="backend-match-card" key={backend.id}>
+              <header><div><h3>{backend.name}</h3><code>{backend.id}</code></div><span>满足全部条件</span></header>
+              <BackendFacts backend={backend} />
+              {backend.match_reasons.length > 0 && <ul>{backend.match_reasons.map((reason) => <li key={reason}>✓ {reason}</li>)}</ul>}
+            </article>
+          ))}
         </div>
       </section>
+
+      <section className="backend-excluded">
+        <header><span>其他后端为什么没有入选</span><small>{response.excluded.length} 个</small></header>
+        <div>
+          {response.excluded.map((backend) => (
+            <article key={backend.id}>
+              <div><h3>{backend.name}</h3><code>{backend.id}</code></div>
+              <BackendFacts backend={backend} />
+              <ul>{backend.exclusion_reasons.map((reason) => <li key={reason}>× {reason}</li>)}</ul>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <p className="backend-snapshot-note">能力数据来自 LoomQ 官方后端能力表快照（version: {response.capability_version}）。队列、成本等为评测基准分类，不代表平台实时状态。</p>
+    </div>
+  )
+}
+
+export function BackendWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen) => void }) {
+  const [prompt, setPrompt] = useState('')
+  const [response, setResponse] = useState<BackendResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submitBackend(event: FormEvent) {
+    event.preventDefault()
+    const requestPrompt = prompt.trim()
+    if (!requestPrompt || loading) return
+    setLoading(true)
+    setError('')
+    setResponse(null)
+    try {
+      const result = await fetch('/api/backend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: requestPrompt }),
+      })
+      const payload = await result.json() as BackendResponse & { error?: string }
+      if (!result.ok) throw new Error(payload.error)
+      setResponse(payload)
+    } catch {
+      setError('这次推荐没有完成，请检查模型配置后重试。')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <main className="backend-shell">
+      <GlobalNavigation current="backend" onNavigate={onNavigate} />
+      <header className="backend-heading">
+        <div><span>05 · SELECT BACKEND</span><h1>选择合适的运行平台</h1></div>
+        <p>告诉 LoomQ 你的 qubit、真机、排队、成本和账号限制。AI 只提取标准约束，候选与排除原因由本地能力表确定。</p>
+      </header>
+      <form className="backend-workspace" onSubmit={submitBackend}>
+        <section className="backend-input-panel">
+          <header><span>REQUIREMENTS</span><strong>自然语言 → 标准约束</strong></header>
+          <label htmlFor="backend-prompt">描述你的运行要求</label>
+          <textarea id="backend-prompt" placeholder="例如：至少 20 个 qubit，不想排队，也不想注册账号。" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={loading} />
+          <button className="backend-submit" type="submit" disabled={loading || !prompt.trim()}>{loading ? '正在分析…' : '分析并推荐'}</button>
+          <div className="backend-examples">
+            <span>示例要求</span>
+            {BACKEND_EXAMPLES.map((example, index) => <button type="button" key={example} onClick={() => { setPrompt(example); setError('') }} disabled={loading}><b>{index + 1}</b>{example}</button>)}
+          </div>
+          <aside><strong>这里只做选择，不提交量子任务</strong><p>不会查询实时队列、实时价格或平台可用性。</p></aside>
+        </section>
+        <section className="backend-result-panel" aria-live="polite">
+          <header><span>RECOMMENDATION</span><strong>{loading ? '正在分析要求' : response ? '本地筛选完成' : '等待输入'}</strong></header>
+          {loading && <div className="backend-loading"><i aria-hidden="true" /><h2>正在理解要求并筛选能力表</h2><p>请求完成后会一次性展示真实约束和本地筛选结果。</p></div>}
+          {!loading && error && <div className="repair-error"><b>!</b><p>{error}</p></div>}
+          {!loading && !error && !response && <div className="backend-empty"><span>描述运行要求</span><i>→</i><span>AI 提取约束</span><i>→</i><span>本地确定性筛选</span></div>}
+          {!loading && response && <BackendResults response={response} onModify={() => setResponse(null)} />}
+        </section>
+      </form>
     </main>
   )
 }
 
 export function AdvancedCapabilityScreen({ kind, onNavigate }: AdvancedCapabilityProps) {
   if (kind === 'repair') return <RepairWorkspace onNavigate={onNavigate} />
-  return <BackendPlaceholder onNavigate={onNavigate} />
+  return <BackendWorkspace onNavigate={onNavigate} />
 }

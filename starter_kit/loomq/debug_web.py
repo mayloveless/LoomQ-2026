@@ -8,6 +8,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from typing import Any, Callable, Sequence
 
+from .backend_selector import (
+    Backend,
+    BackendConstraints,
+    load_backends,
+    load_capability_version,
+    select_backends,
+)
 from .debug_cli import build_debug_trace
 from .qasm_tools import QASMValidationError, validate_qasm
 from .teaching_explainer import TeachingExplanation, explain_validated_circuit
@@ -20,6 +27,13 @@ DebugBuilder = Callable[[str], tuple[str, Sequence[Any]]]
 TeachingExplainer = Callable[
     [str, str, Sequence[Any]], TeachingExplanation | None
 ]
+_BACKEND_CONSTRAINT_FIELDS = {
+    "min_qubits",
+    "require_qpu",
+    "require_no_queue",
+    "cost_policy",
+    "allow_account_required",
+}
 
 
 def build_debug_payload(
@@ -105,12 +119,187 @@ def build_repair_payload(
     }
 
 
+def _backend_payload(backend: Backend) -> dict[str, Any]:
+    return {
+        "id": backend.id,
+        "name": backend.name,
+        "kind": backend.kind,
+        "max_qubits": backend.max_qubits,
+        "queue": backend.queue,
+        "cost": backend.cost,
+        "requires_account": backend.requires_account,
+    }
+
+
+def _backend_match_reasons(
+    backend: Backend, constraints: BackendConstraints
+) -> list[str]:
+    """只解释 selector 真正使用过的约束，不把未限制字段写成优势。"""
+    reasons = []
+    if constraints.min_qubits is not None:
+        reasons.append(
+            "%d qubits ≥ 需要的 %d"
+            % (backend.max_qubits, constraints.min_qubits)
+        )
+    if constraints.require_qpu is True:
+        reasons.append("类型为真机 QPU")
+    if constraints.require_no_queue:
+        reasons.append("能力表队列分类为 none")
+    if constraints.cost_policy == "free_only":
+        reasons.append("能力表成本分类为 free")
+    elif constraints.cost_policy == "free_or_quota":
+        reasons.append("成本分类属于 free / free_quota")
+    if constraints.allow_account_required is False:
+        reasons.append("能力表标记为无需账号")
+    return reasons
+
+
+def _backend_exclusion_reasons(
+    backend: Backend, constraints: BackendConstraints
+) -> list[str]:
+    """逐项镜像 select_backends() 的现有排除条件。"""
+    reasons = []
+    if (
+        constraints.min_qubits is not None
+        and backend.max_qubits < constraints.min_qubits
+    ):
+        reasons.append(
+            "只有 %d qubits，不满足至少 %d qubits"
+            % (backend.max_qubits, constraints.min_qubits)
+        )
+    if constraints.require_qpu is True and backend.kind != "qpu":
+        reasons.append("类型为 %s，不是真机 QPU" % backend.kind)
+    if constraints.require_no_queue and backend.queue != "none":
+        reasons.append("能力表队列分类为 %s，不满足零排队" % backend.queue)
+    if constraints.cost_policy == "free_only" and backend.cost != "free":
+        reasons.append("成本分类为 %s，不满足完全免费" % backend.cost)
+    if constraints.cost_policy == "free_or_quota" and backend.cost not in (
+        "free",
+        "free_quota",
+    ):
+        reasons.append("成本分类为 %s，不属于免费或免费额度" % backend.cost)
+    if constraints.allow_account_required is False and backend.requires_account:
+        reasons.append("能力表标记为需要账号")
+    return reasons
+
+
+def _relaxation_categories(constraints: BackendConstraints) -> list[str]:
+    categories = []
+    if constraints.min_qubits is not None:
+        categories.append("比特数")
+    if constraints.require_qpu is True:
+        categories.append("真机")
+    if constraints.require_no_queue:
+        categories.append("零排队")
+    if constraints.cost_policy in ("free_only", "free_or_quota"):
+        categories.append("费用")
+    if constraints.allow_account_required is False:
+        categories.append("账号")
+    return categories or ["当前约束"]
+
+
+def build_backend_payload(
+    prompt: str,
+    *,
+    debug_builder: DebugBuilder = build_debug_trace,
+) -> dict[str, Any]:
+    """复用 production Trace，并用本地能力表解释匹配与排除原因。"""
+    _, events = debug_builder(prompt)
+    constraint_event = next(
+        (
+            event
+            for event in reversed(events)
+            if event.layer == "agent" and event.stage == "backend_constraints"
+        ),
+        None,
+    )
+    selected_event = next(
+        (
+            event
+            for event in reversed(events)
+            if event.layer == "agent" and event.stage == "backend_selected"
+        ),
+        None,
+    )
+    if constraint_event is None or selected_event is None:
+        raise RuntimeError("backend selection trace is incomplete")
+    if not _BACKEND_CONSTRAINT_FIELDS.issubset(constraint_event.data):
+        raise RuntimeError("backend constraints trace is incomplete")
+
+    try:
+        constraints = BackendConstraints(
+            min_qubits=constraint_event.data.get("min_qubits"),
+            require_qpu=constraint_event.data.get("require_qpu"),
+            require_no_queue=constraint_event.data.get("require_no_queue"),
+            cost_policy=constraint_event.data.get("cost_policy"),
+            allow_account_required=constraint_event.data.get(
+                "allow_account_required"
+            ),
+        )
+    except ValueError:
+        raise RuntimeError("backend constraints trace is invalid") from None
+
+    trace_ids = selected_event.data.get("backend_ids")
+    if not isinstance(trace_ids, list) or not all(
+        isinstance(backend_id, str) for backend_id in trace_ids
+    ):
+        raise RuntimeError("backend selection trace has invalid backend ids")
+
+    backends = load_backends()
+    local_ids = [backend.id for backend in select_backends(constraints)]
+    if trace_ids != local_ids:
+        raise RuntimeError("backend selection trace does not match local selector")
+    raw_no_match = selected_event.data.get("no_match")
+    if not isinstance(raw_no_match, bool):
+        raise RuntimeError("backend selection trace has invalid no-match state")
+    no_match = raw_no_match
+    if no_match != (not bool(trace_ids)):
+        raise RuntimeError("backend selection trace has inconsistent no-match state")
+
+    matched_ids = set(trace_ids)
+    matches = []
+    excluded = []
+    for backend in backends:
+        if backend.id in matched_ids:
+            matches.append(
+                {
+                    **_backend_payload(backend),
+                    "match_reasons": _backend_match_reasons(backend, constraints),
+                }
+            )
+        else:
+            reasons = _backend_exclusion_reasons(backend, constraints)
+            if not reasons:
+                raise RuntimeError("backend exclusion does not match local selector")
+            excluded.append(
+                {**_backend_payload(backend), "exclusion_reasons": reasons}
+            )
+
+    return {
+        "constraints": {
+            "min_qubits": constraints.min_qubits,
+            "require_qpu": constraints.require_qpu,
+            "require_no_queue": constraints.require_no_queue,
+            "cost_policy": constraints.cost_policy,
+            "allow_account_required": constraints.allow_account_required,
+        },
+        "matches": matches,
+        "excluded": excluded,
+        "no_match": no_match,
+        "relaxation_categories": (
+            _relaxation_categories(constraints) if no_match else []
+        ),
+        "capability_version": load_capability_version(),
+        "events": [event.as_dict() for event in events],
+    }
+
+
 def _json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
 class DebugRequestHandler(BaseHTTPRequestHandler):
-    """Serve only the two endpoints needed by the local MVP."""
+    """Serve the local Web workspaces through thin production-backed APIs."""
 
     server_version = "LoomQDebug/1.0"
 
@@ -130,7 +319,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
-        if self.path not in ("/api/debug", "/api/repair"):
+        if self.path not in ("/api/debug", "/api/repair", "/api/backend"):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
             return
 
@@ -139,9 +328,16 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             content_length = 0
         if content_length <= 0 or content_length > MAX_REQUEST_BYTES:
+            # 三个工作区分别保留自己的输入错误文案。
+            if self.path == "/api/repair":
+                error = "请输入有效的修复目标和 OpenQASM。"
+            elif self.path == "/api/backend":
+                error = "请输入有效的后端要求。"
+            else:
+                error = "请输入有效的调试请求。"
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": "请输入有效的调试请求。"},
+                {"error": error},
             )
             return
 
@@ -150,7 +346,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
             request = json.loads(raw_body.decode("utf-8"))
             if not isinstance(request, dict):
                 raise ValueError("invalid request")
-            if self.path == "/api/debug":
+            if self.path in ("/api/debug", "/api/backend"):
                 prompt = request.get("prompt")
                 if not isinstance(prompt, str) or not prompt.strip():
                     raise ValueError("invalid prompt")
@@ -171,29 +367,38 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.BAD_REQUEST,
                 {
                     "error": (
-                        "请输入有效的调试请求。"
-                        if self.path == "/api/debug"
-                        else "请输入有效的修复目标和 OpenQASM。"
+                        "请输入有效的修复目标和 OpenQASM。"
+                        if self.path == "/api/repair"
+                        else (
+                            "请输入有效的后端要求。"
+                            if self.path == "/api/backend"
+                            else "请输入有效的调试请求。"
+                        )
                     )
                 },
             )
             return
 
         try:
-            payload = (
-                build_debug_payload(*request_args)
-                if self.path == "/api/debug"
-                else build_repair_payload(*request_args)
-            )
+            if self.path == "/api/debug":
+                payload = build_debug_payload(*request_args)
+            elif self.path == "/api/repair":
+                payload = build_repair_payload(*request_args)
+            else:
+                payload = build_backend_payload(*request_args)
         except Exception:
             # 浏览器只接收固定安全文案，不暴露模型响应、凭证、路径或 traceback。
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 {
                     "error": (
-                        "这次调试没有完成，请检查模型配置后重试。"
-                        if self.path == "/api/debug"
-                        else "这次检查没有完成，请检查模型配置后重试。"
+                        "这次检查没有完成，请检查模型配置后重试。"
+                        if self.path == "/api/repair"
+                        else (
+                            "这次推荐没有完成，请检查模型配置后重试。"
+                            if self.path == "/api/backend"
+                            else "这次调试没有完成，请检查模型配置后重试。"
+                        )
                     )
                 },
             )
@@ -231,4 +436,10 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["build_debug_payload", "build_repair_payload", "create_server", "main"]
+__all__ = [
+    "build_backend_payload",
+    "build_debug_payload",
+    "build_repair_payload",
+    "create_server",
+    "main",
+]
