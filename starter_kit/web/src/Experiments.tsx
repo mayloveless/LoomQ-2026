@@ -14,27 +14,27 @@ const EXPERIMENTS = [
     id: 'bell',
     number: '01',
     category: '关联',
-    name: 'Bell 关联实验',
-    english: 'Bell State',
-    description: '让两个量子比特分别测量，却只看到 00 或 11。看看这种关联是怎样一步步建立起来的。',
+    question: '两个变量，什么时候不能再分开理解？',
+    bridge: '普通程序里，我们习惯分别理解每个变量；形成纠缠后，更重要的是整个系统的联合状态。',
+    formal: 'Bell State · 纠缠与联合状态',
     concepts: ['叠加', '纠缠', '测量'],
   },
   {
     id: 'search',
     number: '02',
     category: '计算',
-    name: 'Grover 搜索实验',
-    english: 'Grover Search',
-    description: '在 4 个候选结果中，把目标 |11⟩ 被测到的概率逐步放大。',
+    question: '搜索一定要逐个检查答案吗？',
+    bridge: '普通程序常用遍历、比较、返回；Grover 用“标记 → 干涉 → 放大 → 测量”改变搜索过程。',
+    formal: 'Grover Search · 标记与概率放大',
     concepts: ['均匀叠加', '标记目标', '概率放大', '测量'],
   },
   {
     id: 'phase',
     number: '03',
     category: '状态',
-    name: '相位实验',
-    english: 'Phase',
-    description: '两个状态看起来都有相同的测量概率，但内部的相位信息已经不同。',
+    question: '输出一样，内部状态就一定一样吗？',
+    bridge: '当前测量概率相同，不代表量子状态相同；相对相位可能暂时看不出来，却会影响后续干涉和结果。',
+    formal: 'Relative Phase · 相位与后续干涉',
     concepts: ['概率', '相位', '状态差异'],
   },
 ] as const
@@ -119,7 +119,7 @@ export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: Exper
           </div>
           <div>
             <p>它不适合大多数普通程序，却可能在少数特殊问题上提供完全不同的求解方式。</p>
-            <strong>先从三个小实验，看看这种“不同”到底发生在哪里。</strong>
+            <strong>先从三个小实验，看看量子计算到底打破了哪些普通程序的直觉。</strong>
           </div>
         </div>
 
@@ -141,9 +141,9 @@ export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: Exper
                   <span>{experiment.number} · {experiment.category}</span>
                   {experiment.id === 'bell' && <em>推荐从这里开始</em>}
                 </div>
-                <div className="experiment-name"><strong>{experiment.name}</strong><small>{experiment.english}</small></div>
-                <h2>{scenario.title}</h2>
-                <p className="experiment-description">{experiment.description}</p>
+                <h2>{experiment.question}</h2>
+                <p className="experiment-description">{experiment.bridge}</p>
+                <div className="experiment-formal">{experiment.formal}</div>
                 <ExperimentVisualization id={experiment.id} />
                 <div className="experiment-concepts"><span>你会看到</span><p>{experiment.concepts.map((concept) => <code key={concept}>{concept}</code>)}</p></div>
                 <button className="experiment-open" onClick={() => onSelect(scenario)}>在 Explorer 中打开 <span>→</span></button>

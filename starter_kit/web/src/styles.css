@@ -400,11 +400,9 @@ code, kbd { font-family: var(--mono); }
 .experiment-phase:hover { border-top-color: #c69a61; }
 .experiment-meta { min-height: 25px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font: 14px var(--mono); }
 .experiment-meta em { padding: 4px 7px; color: #8fc8b1; border: 1px solid rgba(103,197,135,.24); border-radius: 3px; background: rgba(103,197,135,.06); font: normal 14px var(--mono); }
-.experiment-name { display: flex; align-items: baseline; gap: 9px; margin-top: 20px; }
-.experiment-name strong { color: #d4dce3; font-size: 17px; }
-.experiment-name small { color: var(--muted); font: 14px var(--mono); }
 .experiment-card h2 { min-height: 70px; margin: 18px 0 10px; color: #eef2f5; font-size: 25px; line-height: 1.38; letter-spacing: -.025em; }
 .experiment-description { min-height: 76px; margin: 0; color: #8d98a4; font-size: 14px; line-height: 1.7; }
+.experiment-formal { margin-top: 13px; color: var(--muted); font: 14px var(--mono); }
 .experiment-visual { height: 205px; flex: 0 0 205px; margin-top: 22px; padding: 17px; border: 1px solid #29343c; border-radius: 5px; background: #0d1115; }
 .bell-visual > div { display: grid; grid-template-columns: 34px 1fr 42px; align-items: center; gap: 9px; height: 25px; }
 .bell-visual code { color: #c9d4db; font-size: 14px; }
