@@ -7,7 +7,11 @@ import unittest
 from unittest import mock
 
 from loomq.debug_trace import TraceRecorder
-from loomq.debug_web import DebugRequestHandler, build_debug_payload
+from loomq.debug_web import (
+    DebugRequestHandler,
+    build_debug_payload,
+    build_repair_payload,
+)
 from loomq.teaching_explainer import TeachingExplanation, TeachingStep
 
 
@@ -35,6 +39,61 @@ class DebugWebSerializationTests(unittest.TestCase):
         self.assertIsNone(payload["teaching"])
         explainer.assert_not_called()
         json.dumps(payload, ensure_ascii=False)
+
+    def test_repair_payload_keeps_invalid_input_diagnostic_and_still_runs_agent(self):
+        recorder = TraceRecorder()
+        recorder.emit(
+            layer="agent",
+            stage="parser_validation",
+            executor="local",
+            status="ok",
+            summary="final parser ok",
+        )
+        recorder.emit(
+            layer="agent",
+            stage="agent_result",
+            executor="local",
+            status="ok",
+            summary="final",
+            data={"qasm": "OPENQASM 2.0;\nqreg q[1];", "repaired": False},
+        )
+        builder = mock.Mock(return_value=("reply with unrelated code", recorder.events))
+
+        payload = build_repair_payload(
+            "生成一个单量子比特程序",
+            "OPENQASM 2.0;\nqreg q[1]",
+            debug_builder=builder,
+        )
+
+        self.assertEqual(payload["input_validation"]["status"], "error")
+        self.assertIn("Parse", payload["input_validation"]["diagnostic"])
+        builder.assert_called_once()
+        repair_prompt = builder.call_args.args[0]
+        self.assertIn("用户期望：生成一个单量子比特程序", repair_prompt)
+        self.assertIn("OPENQASM 2.0;\nqreg q[1]", repair_prompt)
+        self.assertEqual(payload["repaired_qasm"], "OPENQASM 2.0;\nqreg q[1];")
+        self.assertNotIn("teaching", payload)
+
+    def test_repair_payload_reports_only_syntax_for_valid_original_input(self):
+        recorder = TraceRecorder()
+        recorder.emit(
+            layer="agent",
+            stage="agent_result",
+            executor="local",
+            status="ok",
+            summary="final",
+            data={"qasm": "OPENQASM 2.0;\nqreg q[1];"},
+        )
+        payload = build_repair_payload(
+            "保持零态",
+            "OPENQASM 2.0;\nqreg q[1];",
+            debug_builder=mock.Mock(return_value=("reply", recorder.events)),
+        )
+
+        self.assertEqual(
+            payload["input_validation"], {"status": "ok", "diagnostic": None}
+        )
+        self.assertNotIn("semantic", payload["input_validation"])
 
     def test_explainer_receives_only_final_validated_qasm_and_real_circuit(self):
         recorder = TraceRecorder()
@@ -134,6 +193,40 @@ class DebugWebHTTPTests(unittest.TestCase):
         handler.send_response.assert_called_once_with(HTTPStatus.OK)
         self.assertEqual(json.loads(handler.wfile.getvalue()), {"reply": "ok", "events": []})
         build_payload.assert_called_once_with("生成 Bell 态")
+
+    @mock.patch("loomq.debug_web.build_repair_payload")
+    def test_repair_endpoint_requires_goal_and_qasm(self, build_payload):
+        body = json.dumps({"goal": "生成 Bell 态"}).encode("utf-8")
+        handler = self.make_handler(path="/api/repair", body=body)
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.BAD_REQUEST)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"error": "请输入有效的修复目标和 OpenQASM。"},
+        )
+        build_payload.assert_not_called()
+
+    @mock.patch("loomq.debug_web.build_repair_payload")
+    def test_repair_endpoint_returns_real_repair_payload(self, build_payload):
+        build_payload.return_value = {
+            "input_validation": {"status": "error", "diagnostic": "ParseError"},
+            "reply": "ok",
+            "repaired_qasm": "OPENQASM 2.0;\nqreg q[1];",
+            "events": [],
+        }
+        body = json.dumps(
+            {"goal": "保持零态", "qasm": "OPENQASM 2.0;\nqreg q[1]"}
+        ).encode("utf-8")
+        handler = self.make_handler(path="/api/repair", body=body)
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        build_payload.assert_called_once_with(
+            "保持零态", "OPENQASM 2.0;\nqreg q[1]"
+        )
 
     @mock.patch("loomq.debug_web.build_debug_payload")
     def test_errors_return_only_fixed_safe_message(self, build_payload):

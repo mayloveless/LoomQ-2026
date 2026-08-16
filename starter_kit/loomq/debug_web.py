@@ -9,6 +9,7 @@ import json
 from typing import Any, Callable, Sequence
 
 from .debug_cli import build_debug_trace
+from .qasm_tools import QASMValidationError, validate_qasm
 from .teaching_explainer import TeachingExplanation, explain_validated_circuit
 
 
@@ -54,6 +55,56 @@ def build_debug_payload(
     }
 
 
+def _repair_request_prompt(goal: str, qasm: str) -> str:
+    """集中构造 repair_qasm 用户请求，保持目标与原始程序原样参与判断。"""
+    return (
+        "请检查并修复下面的 OpenQASM 2.0 程序。\n"
+        "保持用户明确声明的目标功能和测量语义不变。\n\n"
+        "用户期望：%s\n\n"
+        "原始程序：\n%s" % (goal, qasm)
+    )
+
+
+def build_repair_payload(
+    goal: str,
+    qasm: str,
+    *,
+    debug_builder: DebugBuilder = build_debug_trace,
+) -> dict[str, Any]:
+    """检查原始输入，并复用 production L2 Trace 取得真实修复提案。"""
+    try:
+        validate_qasm(qasm)
+    except QASMValidationError as exc:
+        input_validation = {
+            "status": "error",
+            "diagnostic": exc.diagnostic,
+        }
+    else:
+        input_validation = {"status": "ok", "diagnostic": None}
+
+    reply, events = debug_builder(_repair_request_prompt(goal, qasm))
+    final_event = next(
+        (
+            event
+            for event in reversed(events)
+            if event.layer == "agent" and event.stage == "agent_result"
+        ),
+        None,
+    )
+    repaired_qasm = None
+    if final_event is not None and final_event.status == "ok":
+        candidate = final_event.data.get("qasm")
+        if isinstance(candidate, str) and candidate.strip():
+            repaired_qasm = candidate
+
+    return {
+        "input_validation": input_validation,
+        "reply": reply,
+        "repaired_qasm": repaired_qasm,
+        "events": [event.as_dict() for event in events],
+    }
+
+
 def _json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
@@ -79,7 +130,7 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
-        if self.path != "/api/debug":
+        if self.path not in ("/api/debug", "/api/repair"):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
             return
 
@@ -97,23 +148,54 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         try:
             raw_body = self.rfile.read(content_length)
             request = json.loads(raw_body.decode("utf-8"))
-            prompt = request.get("prompt") if isinstance(request, dict) else None
-            if not isinstance(prompt, str) or not prompt.strip():
-                raise ValueError("invalid prompt")
+            if not isinstance(request, dict):
+                raise ValueError("invalid request")
+            if self.path == "/api/debug":
+                prompt = request.get("prompt")
+                if not isinstance(prompt, str) or not prompt.strip():
+                    raise ValueError("invalid prompt")
+                request_args = (prompt.strip(),)
+            else:
+                goal = request.get("goal")
+                qasm = request.get("qasm")
+                if (
+                    not isinstance(goal, str)
+                    or not goal.strip()
+                    or not isinstance(qasm, str)
+                    or not qasm.strip()
+                ):
+                    raise ValueError("invalid repair request")
+                request_args = (goal.strip(), qasm.strip())
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
-                {"error": "请输入有效的调试请求。"},
+                {
+                    "error": (
+                        "请输入有效的调试请求。"
+                        if self.path == "/api/debug"
+                        else "请输入有效的修复目标和 OpenQASM。"
+                    )
+                },
             )
             return
 
         try:
-            payload = build_debug_payload(prompt.strip())
+            payload = (
+                build_debug_payload(*request_args)
+                if self.path == "/api/debug"
+                else build_repair_payload(*request_args)
+            )
         except Exception:
             # 浏览器只接收固定安全文案，不暴露模型响应、凭证、路径或 traceback。
             self._send_json(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                {"error": "这次调试没有完成，请检查模型配置后重试。"},
+                {
+                    "error": (
+                        "这次调试没有完成，请检查模型配置后重试。"
+                        if self.path == "/api/debug"
+                        else "这次检查没有完成，请检查模型配置后重试。"
+                    )
+                },
             )
             return
         self._send_json(HTTPStatus.OK, payload)
@@ -149,4 +231,4 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ["build_debug_payload", "create_server", "main"]
+__all__ = ["build_debug_payload", "build_repair_payload", "create_server", "main"]
