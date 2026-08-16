@@ -510,6 +510,8 @@ code, kbd { font-family: var(--mono); }
 .learn-eyebrow, .learn-section-heading > div > span, .learn-bottom-cta > span { color: #65aab3; font: 14px var(--mono); letter-spacing: .15em; }
 .learn-hero h1 { margin: 15px 0 20px; color: #eef2f6; font-size: clamp(38px, 4.1vw, 58px); font-weight: 690; line-height: 1.12; letter-spacing: -.045em; }
 .learn-hero-copy > p { max-width: 640px; margin: 0; color: #8d98a5; font-size: 17px; line-height: 1.75; }
+.learn-hero-sequence { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 13px; color: #dec27d; font-size: 16px; font-weight: 650; }
+.learn-hero-sequence i { color: #c1aa72; font: normal 15px var(--mono); }
 .learn-primary { min-height: 44px; margin-top: 30px; padding: 0 18px; color: #eefcff; border: 1px solid #488892; border-radius: 4px; background: #356d75; font-size: 14px; font-weight: 650; cursor: pointer; }
 .learn-primary:hover { border-color: #66a9b2; background: #3c7b84; }
 .learn-primary span { color: #d6f8fc; }
@@ -561,8 +563,25 @@ code, kbd { font-family: var(--mono); }
 .learn-text-link { margin-top: 14px; padding: 6px; color: #65717d; border: 0; background: transparent; font-size: 14px; cursor: pointer; }
 .learn-text-link:hover { color: #aeb8c2; }
 
+/* 13I：用紧凑的分栏说明量子计算的适用边界，不扩展成新的重型内容区。 */
+.learn-why { max-width: 1200px; margin: 0 auto; padding: 58px 34px 54px; border-top: 1px solid var(--border); scroll-margin-top: 18px; }
+.learn-why-heading { display: grid; grid-template-columns: minmax(320px, .85fr) minmax(420px, 1.15fr); align-items: end; gap: 64px; }
+.learn-why-heading > div:first-child > span { color: #65aab3; font: 14px var(--mono); letter-spacing: .15em; }
+.learn-why-heading h2 { margin: 12px 0 0; color: #e7edf2; font-size: 30px; line-height: 1.28; letter-spacing: -.03em; }
+.learn-why-heading p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.72; }
+.learn-why-heading strong { display: block; margin-top: 11px; color: #d6dde4; font-size: 14px; font-weight: 600; }
+.learn-why-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 30px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.learn-why-item { min-width: 0; padding: 20px 22px 21px; border-left: 1px solid var(--border); }
+.learn-why-item:first-child { border-left: 0; }
+.learn-why-item-featured { background: linear-gradient(90deg, rgba(88,201,216,.045), transparent 78%); box-shadow: inset 2px 0 #3f7f88; }
+.learn-why-item > span { color: var(--faint); font: 11px var(--mono); letter-spacing: .08em; }
+.learn-why-item h3 { margin: 11px 0 8px; color: #e0e6eb; font-size: 18px; }
+.learn-why-item p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.68; }
+
 @media (max-width: 1100px) {
   .learn-hero { grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr); gap: 38px; padding-inline: 30px; }
+  .learn-why { padding-inline: 30px; }
+  .learn-why-heading { gap: 38px; }
   .learn-concepts { padding-inline: 30px; }
   .learn-concept-card { grid-column: span 3; }
   .learn-concept-card:nth-child(-n+2) { grid-column: span 3; }
@@ -694,7 +713,7 @@ code, kbd { font-family: var(--mono); }
 }
 
 .quantum-term-en, .quantum-concept-name > span {
-  color: #c1aa72;
+  color: #dec27d;
 }
 
 @media (max-width: 1100px) {

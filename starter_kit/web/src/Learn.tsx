@@ -36,7 +36,7 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
           <p>面向有编程基础、但没有量子专业背景的开发者。LoomQ 借助 AI 帮你生成、理解、验证和修复量子程序，并找到合适的运行平台。</p>
           <small>不用先成为量子专家，也能完成自己的第一次量子实验。</small>
           <div className="learn-landing-actions">
-            <a className="learn-primary learn-guide-link" href="#learn-quickstart">30 秒看懂一个量子程序 <span>↓</span></a>
+            <a className="learn-primary learn-guide-link" href="#learn-why">30 秒看懂一个量子程序 <span>↓</span></a>
             <button className="learn-landing-secondary" onClick={onStart}>直接选择实验 <span>→</span></button>
           </div>
         </div>
@@ -52,11 +52,46 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         </div>
       </section>
 
+      {/* 用三个短例子说明量子计算的适用边界，避免扩展成行业科普。 */}
+      <section className="learn-why" id="learn-why" aria-labelledby="learn-why-heading">
+        <div className="learn-why-heading">
+          <div>
+            <span>WHY QUANTUM MATTERS</span>
+            <h2 id="learn-why-heading">量子计算不是“更快的电脑”</h2>
+          </div>
+          <div>
+            <p>它并不适合大多数普通程序。量子计算真正有价值的地方，是少数具有特殊结构的问题：适用面很窄，但一旦命中，可能带来传统算法难以达到的优势。</p>
+            <strong>不是所有问题都更快，而是在少数问题上改变可计算性的边界。</strong>
+          </div>
+        </div>
+
+        <div className="learn-why-list">
+          <article className="learn-why-item learn-why-item-featured">
+            <span>01 · 与开发者最直接相关</span>
+            <h3>密码学</h3>
+            <p>Shor 算法会威胁 RSA、椭圆曲线等公钥密码体系，推动行业迁移到后量子密码。它改变的是软件基础设施的安全假设，不代表今天的量子电脑能破解所有密码。</p>
+          </article>
+          <article className="learn-why-item">
+            <span>02 · SEARCH / COMBINATION</span>
+            <h3>搜索 / 组合</h3>
+            <p>Grover 不是瞬间找到答案；它利用相位与干涉，让目标更容易被测到。后面的搜索实验会直接展示这个过程。</p>
+          </article>
+          <article className="learn-why-item">
+            <span>03 · QUANTUM SIMULATION</span>
+            <h3>模拟量子系统</h3>
+            <p>分子、材料等本身就是量子系统，量子计算机有机会更自然地模拟它们。</p>
+          </article>
+        </div>
+      </section>
+
       <section className="learn-hero" id="learn-quickstart">
         <div className="learn-hero-copy">
           <span className="learn-eyebrow">ONE QUBIT · THREE STEPS</span>
           <h1>跟着一个<QuantumTerm english="">量子比特</QuantumTerm>，<br />看懂量子程序怎么运行</h1>
-          <p>不需要量子物理背景。我们只运行一个真实的三步程序：准备<QuantumTerm english="">量子状态</QuantumTerm>、用H <QuantumTerm english="">改变</QuantumTerm> 状态，最后<QuantumTerm english="">测量</QuantumTerm>结果。</p>
+          <p>不需要量子物理背景。我们只运行一个真实的三步程序：</p>
+          <div className="learn-hero-sequence" aria-label="三步程序：准备量子状态，然后用 H 改变状态，最后测量结果">
+            <span>准备量子状态</span><i>→</i><span>用 H 改变状态</span><i>→</i><span>测量结果</span>
+          </div>
           <a className="learn-primary learn-guide-link" href="#guided-program">从第一步开始 <span>↓</span></a>
         </div>
         <div className="learn-code-window" aria-label="单量子比特 OpenQASM 程序">
