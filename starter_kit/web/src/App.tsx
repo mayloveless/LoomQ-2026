@@ -574,6 +574,105 @@ export function EmptyWorkspace({ loading = false, scenario }: { loading?: boolea
   )
 }
 
+export function ProgramPanel({
+  steps,
+  qasm,
+  circuitGoal,
+  activeStep,
+  highlightedSteps,
+  qasmOpen,
+  warnings = [],
+  onSelectStep,
+  onQasmOpenChange,
+}: {
+  steps: TraceEvent[]
+  qasm: string
+  circuitGoal: string
+  activeStep: number
+  highlightedSteps: number[]
+  qasmOpen: boolean
+  warnings?: TraceEvent[]
+  onSelectStep: (index: number) => void
+  onQasmOpenChange: (open: boolean) => void
+}) {
+  const activeLine = steps[activeStep]
+    ? executableLineIndex(qasm, Number(steps[activeStep].data.operation_index ?? -1))
+    : -1
+  const highlightedLines = new Set(highlightedSteps.flatMap((stepIndex) => {
+    const step = steps[stepIndex]
+    if (!step) return []
+    const line = executableLineIndex(qasm, Number(step.data.operation_index ?? -1))
+    return line >= 0 ? [line] : []
+  }))
+  const firstHighlightedLine = highlightedLines.size ? Math.min(...highlightedLines) : -1
+  const codeViewRef = useRef<HTMLDivElement>(null)
+  const firstHighlightedLineRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = codeViewRef.current
+    const target = firstHighlightedLineRef.current
+    if (!qasmOpen || !container || !target) return
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const nextTop = container.scrollTop
+      + targetRect.top
+      - containerRect.top
+      - (container.clientHeight - targetRect.height) / 2
+    // 只滚动到真实映射出的第一行，不猜测缺失的 QASM 范围。
+    container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  }, [activeStep, firstHighlightedLine, qasmOpen])
+
+  return (
+    <section className="curated-program program-panel panel" aria-label="Program · Circuit 与 QASM">
+      <header className="curated-program-heading">
+        <div><span>PROGRAM</span><strong>电路与源码</strong></div>
+        <p><i>✓</i> 已生成并通过 LoomQ 验证</p>
+      </header>
+      <div className="curated-program-goal"><span>实验目标</span><p>{circuitGoal}</p></div>
+      {warnings.map((warning) => (
+        <div className="generic-program-warning" key={warning.seq}>
+          <span>!</span><p>{warning.stage === 'statevector_skipped'
+            ? '电路规模较大，当前不展开 statevector；生成与验证结果仍然有效。'
+            : warning.summary}</p>
+        </div>
+      ))}
+      <CircuitDiagram
+        steps={steps}
+        activeStep={activeStep}
+        highlightedSteps={highlightedSteps}
+        onSelect={onSelectStep}
+      />
+      <details
+        className="qasm-disclosure curated-qasm"
+        open={qasmOpen}
+        onToggle={(event) => onQasmOpenChange(event.currentTarget.open)}
+      >
+        <summary>
+          <span><b className="qasm-icon">Q</b>{qasmOpen ? 'OpenQASM · 收起代码' : 'OpenQASM · 展开代码'}</span>
+          <small>{highlightedSteps.length > 1 ? '当前阶段范围已标出' : '当前步骤已标出'}</small>
+        </summary>
+        <div className="code-view" ref={codeViewRef} role="region" aria-label="完整 OpenQASM 程序">
+          {qasm.split('\n').map((line, index) => {
+            const inHighlightedRange = highlightedLines.has(index)
+            const isActive = index === activeLine
+            return (
+              <div
+                className={`code-line${inHighlightedRange ? ' stage-highlighted' : ''}${isActive ? ' highlighted' : ''}`}
+                key={`${index}-${line}`}
+                ref={index === firstHighlightedLine ? firstHighlightedLineRef : undefined}
+              >
+                <span className="line-number">{index + 1}</span>
+                <code>{line || ' '}</code>
+                {isActive && <span className="execution-marker">▶</span>}
+              </div>
+            )
+          })}
+        </div>
+      </details>
+      </section>
+  )
+}
+
 export function CuratedWorkspace({
   story,
   steps,
@@ -604,75 +703,19 @@ export function CuratedWorkspace({
   onOpenGuide: () => void
 }) {
   const stage = story.stages[Math.min(story.stages.length - 1, Math.max(0, activeStoryStage))]
-  const activeLine = steps[activeStep]
-    ? executableLineIndex(qasm, Number(steps[activeStep].data.operation_index ?? -1))
-    : -1
-  const stageLines = new Set(stage.gateIndices.flatMap((stepIndex) => {
-    const step = steps[stepIndex]
-    if (!step) return []
-    const line = executableLineIndex(qasm, Number(step.data.operation_index ?? -1))
-    return line >= 0 ? [line] : []
-  }))
-  const firstStageLine = stageLines.size ? Math.min(...stageLines) : -1
-  const curatedCodeViewRef = useRef<HTMLDivElement>(null)
-  const firstStageLineRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const container = curatedCodeViewRef.current
-    const target = firstStageLineRef.current
-    if (!qasmOpen || !container || !target) return
-    const containerRect = container.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    const nextTop = container.scrollTop
-      + targetRect.top
-      - containerRect.top
-      - (container.clientHeight - targetRect.height) / 2
-    // Story 切换时只滚动到真实映射出的第一行，不猜测缺失的 QASM 范围。
-    container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
-  }, [activeStoryStage, firstStageLine, qasmOpen])
 
   return (
-    <section className="workspace result-workspace curated-workspace" data-layout="curated-two-column">
-      <section className="curated-program panel" aria-label="Program · Circuit 与 QASM">
-        <header className="curated-program-heading">
-          <div><span>PROGRAM</span><strong>电路与源码</strong></div>
-          <p><i>✓</i> 已生成并通过 LoomQ 验证</p>
-        </header>
-        <div className="curated-program-goal"><span>实验目标</span><p>{circuitGoal}</p></div>
-        <CircuitDiagram
-          steps={steps}
-          activeStep={activeStep}
-          highlightedSteps={stage.gateIndices}
-          onSelect={onSelectStep}
-        />
-        <details
-          className="qasm-disclosure curated-qasm"
-          open={qasmOpen}
-          onToggle={(event) => onQasmOpenChange(event.currentTarget.open)}
-        >
-          <summary>
-            <span><b className="qasm-icon">Q</b>{qasmOpen ? 'OpenQASM · 收起代码' : 'OpenQASM · 展开代码'}</span>
-            <small>当前阶段范围已标出</small>
-          </summary>
-          <div className="code-view" ref={curatedCodeViewRef} role="region" aria-label="完整 OpenQASM 程序">
-            {qasm.split('\n').map((line, index) => {
-              const inStoryStage = stageLines.has(index)
-              const isActive = index === activeLine
-              return (
-                <div
-                  className={`code-line${inStoryStage ? ' stage-highlighted' : ''}${isActive ? ' highlighted' : ''}`}
-                  key={`${index}-${line}`}
-                  ref={index === firstStageLine ? firstStageLineRef : undefined}
-                >
-                  <span className="line-number">{index + 1}</span>
-                  <code>{line || ' '}</code>
-                  {isActive && <span className="execution-marker">▶</span>}
-                </div>
-              )
-            })}
-          </div>
-        </details>
-      </section>
+    <section className="workspace result-workspace two-column-workspace curated-workspace" data-layout="curated-two-column">
+      <ProgramPanel
+        steps={steps}
+        qasm={qasm}
+        circuitGoal={circuitGoal}
+        activeStep={activeStep}
+        highlightedSteps={stage.gateIndices}
+        qasmOpen={qasmOpen}
+        onSelectStep={onSelectStep}
+        onQasmOpenChange={onQasmOpenChange}
+      />
 
       <section className="curated-story-panel panel" aria-label="Story · 实验解释">
         <header className="curated-story-heading">
@@ -699,6 +742,105 @@ export function CuratedWorkspace({
   )
 }
 
+export function GenericWorkspace({
+  steps,
+  warnings,
+  qasm,
+  circuitGoal,
+  activeStep,
+  qasmOpen,
+  autoPlaying,
+  currentState,
+  currentPurpose,
+  teachingStep,
+  hasTeaching,
+  onSelectStep,
+  onQasmOpenChange,
+  onToggleAutoPlayback,
+}: {
+  steps: TraceEvent[]
+  warnings: TraceEvent[]
+  qasm: string
+  circuitGoal: string
+  activeStep: number
+  qasmOpen: boolean
+  autoPlaying: boolean
+  currentState: StateEntry[]
+  currentPurpose: string
+  teachingStep?: TeachingStep
+  hasTeaching: boolean
+  onSelectStep: (index: number) => void
+  onQasmOpenChange: (open: boolean) => void
+  onToggleAutoPlayback: () => void
+}) {
+  const current = steps[activeStep]
+  if (!current) {
+    return (
+      <section className="workspace result-workspace generic-workspace" data-layout="generic-two-column">
+        <div className="panel-empty panel">没有可展示的电路步骤。</div>
+      </section>
+    )
+  }
+  const activeLine = executableLineIndex(qasm, Number(current.data.operation_index ?? -1))
+  const currentStatement = activeLine >= 0 ? qasm.split('\n')[activeLine]?.trim() ?? '' : ''
+  const phaseOnly = isPhaseOnlyChange(current)
+
+  return (
+    <section className="workspace result-workspace two-column-workspace generic-workspace" data-layout="generic-two-column">
+      <ProgramPanel
+        steps={steps}
+        qasm={qasm}
+        circuitGoal={circuitGoal}
+        activeStep={activeStep}
+        highlightedSteps={[activeStep]}
+        qasmOpen={qasmOpen}
+        warnings={warnings}
+        onSelectStep={onSelectStep}
+        onQasmOpenChange={onQasmOpenChange}
+      />
+
+      <section className="generic-explain-panel panel" aria-label="Explain · 当前步骤解释">
+        <header className="curated-story-heading generic-explain-heading">
+          <div><span>EXPLAIN</span><strong>理解当前步骤</strong></div>
+          <small>{activeStep + 1} / {steps.length}</small>
+        </header>
+        <article className="generic-current-step">
+          <span>当前 Gate / Step</span>
+          <h2>{stepTitle(current)}</h2>
+          {current.stage !== 'initial_state' && currentStatement && <code>{currentStatement}</code>}
+          <div>
+            <strong>为什么这里需要它？</strong>
+            <p>{currentPurpose}</p>
+          </div>
+        </article>
+        <div className="generic-state-content">
+          <StateDetailContent
+            current={current}
+            currentState={currentState}
+            phaseOnly={phaseOnly}
+            teachingStep={teachingStep}
+            hasTeaching={hasTeaching}
+          />
+        </div>
+        <nav className="generic-footer-navigation" aria-label="逐步查看电路">
+          <button
+            onClick={() => onSelectStep(Math.max(0, activeStep - 1))}
+            disabled={activeStep === 0}
+          >← 上一步</button>
+          <button
+            className={`generic-auto-play${autoPlaying ? ' playing' : ''}`}
+            onClick={onToggleAutoPlayback}
+          >{autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}</button>
+          <button
+            onClick={() => onSelectStep(Math.min(steps.length - 1, activeStep + 1))}
+            disabled={activeStep >= steps.length - 1}
+          >下一步 →</button>
+        </nav>
+      </section>
+    </section>
+  )
+}
+
 export function ExplorerScreen({
   initialScenarioId,
   onNavigate,
@@ -716,11 +858,9 @@ export function ExplorerScreen({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [resultPrompt, setResultPrompt] = useState('')
-  const [qasmOpen, setQasmOpen] = useState(false)
+  const [qasmOpen, setQasmOpen] = useState(true)
   const [curatedQasmOpen, setCuratedQasmOpen] = useState(true)
   const [curatedGuideOpen, setCuratedGuideOpen] = useState(shouldShowCuratedGuide)
-  const codeViewRef = useRef<HTMLDivElement>(null)
-  const highlightedCodeRef = useRef<HTMLDivElement>(null)
 
   const steps = useMemo(() => circuitSteps(result?.events ?? []), [result])
   const warnings = useMemo(() => circuitWarnings(result?.events ?? []), [result])
@@ -769,7 +909,7 @@ export function ExplorerScreen({
     setActiveStep(0)
     setActiveStoryStage(0)
     setAutoPlaying(false)
-    setQasmOpen(false)
+    setQasmOpen(true)
     setCuratedQasmOpen(true)
     setLoading(true)
     setError('')
@@ -833,12 +973,6 @@ export function ExplorerScreen({
     setAutoPlaying(true)
   }
 
-  const highlightedLine = current
-    ? executableLineIndex(qasm, Number(current.data.operation_index ?? -1))
-    : -1
-  const currentStatement = highlightedLine >= 0
-    ? qasm.split('\n')[highlightedLine]?.trim() ?? ''
-    : ''
   const teachingStep = current && typeof current.data.operation_index === 'number'
     ? result?.teaching?.steps.find(
       (step) => step.operation_index === current.data.operation_index,
@@ -848,20 +982,6 @@ export function ExplorerScreen({
     ? '先确认程序的共同起点，后续每个 Gate 的变化都会与这个初始状态比较。'
     : teachingStep?.purpose ?? String(current?.data.gate_description ?? current?.summary ?? '')
   const circuitGoal = result?.teaching?.circuit_goal || resultPrompt
-  const phaseOnly = current ? isPhaseOnlyChange(current) : false
-
-  useEffect(() => {
-    const container = codeViewRef.current
-    const target = highlightedCodeRef.current
-    if (!qasmOpen || !container || !target) return
-    const containerRect = container.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    const nextTop = container.scrollTop
-      + targetRect.top
-      - containerRect.top
-      - (container.clientHeight - targetRect.height) / 2
-    container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
-  }, [activeStep, highlightedLine, qasmOpen])
 
   return (
     <main className="app-shell">
@@ -928,132 +1048,22 @@ export function ExplorerScreen({
       )}
 
       {result && !backendMode && (!experimentStory || !currentStoryStage || !current) && (
-        <>
-          <section className="workspace result-workspace">
-            <aside className="sidebar panel">
-              <div className="section-title"><span>CIRCUIT STEPS</span><em>{steps.length}</em></div>
-              <div className="verified-summary"><span>✓</span><p>已生成并通过 LoomQ 验证</p></div>
-              <nav className="step-list" aria-label="电路步骤">
-                {steps.map((step, index) => (
-                  <button
-                    className={index === activeStep ? 'active' : ''}
-                    key={step.seq}
-                    onClick={() => selectStep(index)}
-                  >
-                    <span className="step-number">{String(index).padStart(2, '0')}</span>
-                    <span className="step-copy">
-                      <strong>{stepTitle(step)}</strong>
-                      <small>{step.stage === 'initial_state' ? '程序执行前' : step.stage === 'measurement' ? '读出量子状态' : '量子门操作'}</small>
-                    </span>
-                    <span className="step-check">{index <= activeStep ? '✓' : ''}</span>
-                  </button>
-                ))}
-                {warnings.map((warning) => (
-                  <div className="warning-step" key={warning.seq}>
-                    <span>!</span><p>{warning.stage === 'statevector_skipped'
-                      ? '电路规模较大，当前探索视图不展开 statevector；程序生成与验证结果仍然有效。'
-                      : warning.summary}</p>
-                  </div>
-                ))}
-              </nav>
-            </aside>
-
-            <section className={`code-panel panel ${qasmOpen ? 'qasm-open' : ''}`}>
-              {current ? (
-                <>
-                  <div className="current-operation">
-                    <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
-                    <div className="operation-copy">
-                      <div>
-                        <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
-                        <h2>{stepTitle(current)}</h2>
-                        {current.stage !== 'initial_state' && currentStatement && (
-                          <code className="current-statement">{currentStatement}</code>
-                        )}
-                      </div>
-                      <div className="purpose-copy">
-                        <span>为什么这里需要它？</span>
-                        <p>{currentPurpose}</p>
-                      </div>
-                    </div>
-                    <div className="operation-navigation" aria-label="电路执行控制">
-                      <button
-                        aria-label="上一步"
-                        onClick={() => selectStep(Math.max(0, activeStep - 1))}
-                        disabled={activeStep === 0}
-                      >
-                        <span>←</span> 上一步
-                      </button>
-                      <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
-                      <button
-                        className="primary-step"
-                        aria-label="下一步"
-                        onClick={() => selectStep(Math.min(steps.length - 1, activeStep + 1))}
-                        disabled={activeStep >= steps.length - 1}
-                      >
-                        下一步 <span>→</span>
-                      </button>
-                      <button
-                        className={`auto-step ${autoPlaying ? 'playing' : ''}`}
-                        aria-label={autoPlaying ? '暂停自动回放' : '开始自动回放'}
-                        onClick={toggleAutoPlayback}
-                      >
-                        {autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}
-                      </button>
-                    </div>
-                  </div>
-                  <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
-                  <details
-                    className="qasm-disclosure"
-                    open={qasmOpen}
-                    onToggle={(event) => setQasmOpen(event.currentTarget.open)}
-                  >
-                    <summary>
-                      <span><b className="qasm-icon">Q</b>{qasmOpen ? '收起完整 QASM' : '查看完整 QASM'}</span>
-                      <small>OPENQASM 2.0 · 只读</small>
-                    </summary>
-                    <div className="code-view" ref={codeViewRef} role="region" aria-label="完整 OpenQASM 程序">
-                      {qasm.split('\n').map((line, index) => (
-                        <div
-                          className={`code-line ${index === highlightedLine ? 'highlighted' : ''}`}
-                          key={`${index}-${line}`}
-                          ref={index === highlightedLine ? highlightedCodeRef : undefined}
-                        >
-                          <span className="line-number">{index + 1}</span>
-                          <code>{line || ' '}</code>
-                          {index === highlightedLine && <span className="execution-marker">▶</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </>
-              ) : (
-                <div className="panel-empty">没有可探索的电路步骤。</div>
-              )}
-            </section>
-
-            <section className="state-panel panel">
-              {current ? (
-                <>
-                  <div className="state-heading">
-                    <span className="eyebrow">量子状态变化</span>
-                    <span className="state-badge"><i /> {current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
-                  </div>
-                  <StateDetailContent
-                    current={current}
-                    currentState={currentState}
-                    phaseOnly={phaseOnly}
-                    teachingStep={teachingStep}
-                    hasTeaching={Boolean(result.teaching)}
-                  />
-                </>
-              ) : (
-                <div className="panel-empty">当前没有可展示的量子状态。</div>
-              )}
-            </section>
-
-          </section>
-        </>
+        <GenericWorkspace
+          steps={steps}
+          warnings={warnings}
+          qasm={qasm}
+          circuitGoal={circuitGoal}
+          activeStep={activeStep}
+          qasmOpen={qasmOpen}
+          autoPlaying={autoPlaying}
+          currentState={currentState}
+          currentPurpose={currentPurpose}
+          teachingStep={teachingStep}
+          hasTeaching={Boolean(result.teaching)}
+          onSelectStep={selectStep}
+          onQasmOpenChange={setQasmOpen}
+          onToggleAutoPlayback={toggleAutoPlayback}
+        />
       )}
     </main>
   )

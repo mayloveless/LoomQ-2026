@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, CuratedWorkspace, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
+import { ConceptCard, CuratedWorkspace, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, GenericWorkspace, SCENARIOS, ScenarioContext } from './App'
 import { ExperimentStory } from './ExperimentStory'
 import type { ExperimentStoryModel } from './storyModel'
-import type { TraceEvent } from './types'
+import type { StateEntry, TraceEvent } from './types'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -200,5 +200,69 @@ describe('Task 13O curated experiment story frame', () => {
     expect(markup).not.toContain('自动回放')
     expect(markup).not.toContain('查看这一阶段对应的 Gate')
     expect(markup).toContain('先看右边：一次只解释一个阶段')
+  })
+})
+
+describe('Task 13Q generic two-column Explorer', () => {
+  const steps: TraceEvent[] = [
+    {
+      seq: 0, layer: 'circuit', stage: 'initial_state', executor: 'local', status: 'ok', summary: '初始状态',
+      data: { state_after: [{ basis: '0', real: 1, imag: 0, probability: 1 }] },
+    },
+    {
+      seq: 1, layer: 'circuit', stage: 'gate_step', executor: 'local', status: 'ok', summary: '执行 H',
+      data: {
+        operation_index: 0, gate: 'h', qubits: ['q[0]'], gate_description: 'H 让状态形成两个等概率分支。',
+        state_before: [{ basis: '0', real: 1, imag: 0, probability: 1 }],
+        state_after: [
+          { basis: '0', real: Math.SQRT1_2, imag: 0, probability: 0.5 },
+          { basis: '1', real: Math.SQRT1_2, imag: 0, probability: 0.5 },
+        ],
+      },
+    },
+  ]
+
+  it('keeps the full Generic step explanation inside the shared two-column shell', () => {
+    const markup = renderToStaticMarkup(
+      <GenericWorkspace
+        steps={steps}
+        warnings={[]}
+        qasm={'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\nh q[0];'}
+        circuitGoal="观察一个自定义 H 电路"
+        activeStep={1}
+        qasmOpen
+        autoPlaying={false}
+        currentState={steps[1].data.state_after as StateEntry[]}
+        currentPurpose="建立两个等概率分支，供后续操作使用。"
+        teachingStep={{
+          operation_index: 0,
+          purpose: '建立两个等概率分支。',
+          concept: '叠加',
+          concept_explanation: '多个基态共同描述当前量子状态。',
+        }}
+        hasTeaching
+        onSelectStep={() => undefined}
+        onQasmOpenChange={() => undefined}
+        onToggleAutoPlayback={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('data-layout="generic-two-column"')
+    expect(markup).not.toContain('class="generic-step-strip"')
+    expect(markup).toContain('class="circuit-diagram"')
+    expect(markup).toMatch(/<details[^>]*curated-qasm[^>]*open=""/)
+    expect(markup).toContain('当前 Gate / Step')
+    expect(markup).toContain('建立两个等概率分支，供后续操作使用。')
+    expect(markup).toContain('发生了什么？')
+    expect(markup).toContain('当前概念')
+    expect(markup).toContain('多个基态共同描述当前量子状态')
+    expect(markup).toContain('展开技术细节')
+    expect(markup).toContain('← 上一步')
+    expect(markup).toContain('下一步 →')
+    expect(markup).toContain('↺ 重播')
+    expect(markup).not.toContain('Ⅱ 暂停')
+    expect(markup).toContain('stage-highlighted active')
+    expect(markup).not.toContain('CIRCUIT STEPS')
+    expect(markup).not.toContain('data-layout="curated-two-column"')
   })
 })
