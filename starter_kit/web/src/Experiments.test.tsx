@@ -32,7 +32,7 @@ describe('Task 13G experiments screen', () => {
     ])
   })
 
-  it('places free exploration between the hero and formal experiments without duplicating it', () => {
+  it('keeps the emphasized free exploration entry with the formal experiments', () => {
     const markup = renderToStaticMarkup(
       <ExperimentsScreen onNavigate={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
     )
@@ -40,10 +40,26 @@ describe('Task 13G experiments screen', () => {
     const freeEntryIndex = markup.indexOf('class="experiments-free"')
     const experimentGridIndex = markup.indexOf('class="experiments-grid"')
 
-    expect(freeEntryIndex).toBeGreaterThan(markup.indexOf('class="experiments-hero"'))
+    expect(freeEntryIndex).toBeGreaterThan(markup.indexOf('class="experiments-catalog"'))
     expect(freeEntryIndex).toBeLessThan(experimentGridIndex)
     expect(markup.match(/class="experiments-free"/g)).toHaveLength(1)
     expect(markup).toContain('已经有自己的想法？')
     expect(markup).toContain('Explorer 支持直接输入自然语言实验需求')
+  })
+
+  it('places a lightweight Why Quantum motivation directly before the formal experiments', () => {
+    const markup = renderToStaticMarkup(
+      <ExperimentsScreen onNavigate={() => undefined} onSelect={() => undefined} onFreeExplore={() => undefined} />,
+    )
+
+    const motivationIndex = markup.indexOf('class="experiments-motivation"')
+    const experimentGridIndex = markup.indexOf('class="experiments-grid"')
+
+    expect(markup).toContain('量子计算不是“更快的普通电脑”')
+    expect(markup).toContain('它不适合大多数普通程序，却可能在少数特殊问题上提供完全不同的求解方式。')
+    expect(markup).toContain('密码学 · 搜索与组合 · 量子系统模拟')
+    expect(markup).toContain('先从三个小实验，看看这种“不同”到底发生在哪里。')
+    expect(motivationIndex).toBeLessThan(markup.indexOf('class="experiments-free"'))
+    expect(motivationIndex).toBeLessThan(experimentGridIndex)
   })
 })

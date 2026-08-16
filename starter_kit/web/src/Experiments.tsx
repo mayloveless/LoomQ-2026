@@ -110,33 +110,47 @@ export function ExperimentsScreen({ onNavigate, onSelect, onFreeExplore }: Exper
         <p>不用先理解算法。从一个现象开始，在 Explorer 里一步步看量子程序怎样改变状态。</p>
       </section>
 
-      <section className="experiments-free">
-        <div>
-          <span>已经有自己的想法？</span>
-          <p>直接描述你想探索的量子程序。不限于下面三个示例，Explorer 支持直接输入自然语言实验需求。</p>
+      <section className="experiments-catalog" aria-label="选择量子实验">
+        {/* 动机说明只连接“为什么值得看”与实验入口，不扩展成应用场景科普。 */}
+        <div className="experiments-motivation" aria-labelledby="experiments-motivation-heading">
+          <div>
+            <h2 id="experiments-motivation-heading">量子计算不是“更快的普通电脑”</h2>
+            <small>密码学 · 搜索与组合 · 量子系统模拟</small>
+          </div>
+          <div>
+            <p>它不适合大多数普通程序，却可能在少数特殊问题上提供完全不同的求解方式。</p>
+            <strong>先从三个小实验，看看这种“不同”到底发生在哪里。</strong>
+          </div>
         </div>
-        <button onClick={onFreeExplore}>自由探索 <span>→</span></button>
-      </section>
 
-      <section className="experiments-grid" aria-label="正式量子实验">
-        {EXPERIMENTS.map((experiment) => {
-          const scenario = SCENARIOS.find((item) => item.id === experiment.id)
-          if (!scenario) return null
-          return (
-            <article className={`experiment-card experiment-${experiment.id}`} key={experiment.id}>
-              <div className="experiment-meta">
-                <span>{experiment.number} · {experiment.category}</span>
-                {experiment.id === 'bell' && <em>推荐从这里开始</em>}
-              </div>
-              <div className="experiment-name"><strong>{experiment.name}</strong><small>{experiment.english}</small></div>
-              <h2>{scenario.title}</h2>
-              <p className="experiment-description">{experiment.description}</p>
-              <ExperimentVisualization id={experiment.id} />
-              <div className="experiment-concepts"><span>你会看到</span><p>{experiment.concepts.map((concept) => <code key={concept}>{concept}</code>)}</p></div>
-              <button className="experiment-open" onClick={() => onSelect(scenario)}>在 Explorer 中打开 <span>→</span></button>
-            </article>
-          )
-        })}
+        <div className="experiments-free">
+          <div>
+            <span>已经有自己的想法？</span>
+            <p>直接描述你想探索的量子程序。不限于下面三个示例，Explorer 支持直接输入自然语言实验需求。</p>
+          </div>
+          <button onClick={onFreeExplore}>自由探索 <span>→</span></button>
+        </div>
+
+        <div className="experiments-grid" aria-label="正式量子实验">
+          {EXPERIMENTS.map((experiment) => {
+            const scenario = SCENARIOS.find((item) => item.id === experiment.id)
+            if (!scenario) return null
+            return (
+              <article className={`experiment-card experiment-${experiment.id}`} key={experiment.id}>
+                <div className="experiment-meta">
+                  <span>{experiment.number} · {experiment.category}</span>
+                  {experiment.id === 'bell' && <em>推荐从这里开始</em>}
+                </div>
+                <div className="experiment-name"><strong>{experiment.name}</strong><small>{experiment.english}</small></div>
+                <h2>{scenario.title}</h2>
+                <p className="experiment-description">{experiment.description}</p>
+                <ExperimentVisualization id={experiment.id} />
+                <div className="experiment-concepts"><span>你会看到</span><p>{experiment.concepts.map((concept) => <code key={concept}>{concept}</code>)}</p></div>
+                <button className="experiment-open" onClick={() => onSelect(scenario)}>在 Explorer 中打开 <span>→</span></button>
+              </article>
+            )
+          })}
+        </div>
       </section>
 
     </main>
