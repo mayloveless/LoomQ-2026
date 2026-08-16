@@ -125,10 +125,12 @@ export function ExperimentStory({
   model,
   activeStageIndex,
   onSelect,
+  onComplete,
 }: {
   model: ExperimentStoryModel
   activeStageIndex: number
   onSelect: (stageIndex: number) => void
+  onComplete: () => void
 }) {
   const safeIndex = Math.min(model.stages.length - 1, Math.max(0, activeStageIndex))
   const stage = model.stages[safeIndex]
@@ -197,7 +199,11 @@ export function ExperimentStory({
       <nav className="story-footer-navigation" aria-label="切换实验阶段">
         <button onClick={() => onSelect(safeIndex - 1)} disabled={safeIndex === 0}>← 上一阶段</button>
         <span>{safeIndex + 1} / {model.stages.length}</span>
-        <button onClick={() => onSelect(safeIndex + 1)} disabled={safeIndex >= model.stages.length - 1}>下一阶段 →</button>
+        {safeIndex >= model.stages.length - 1 ? (
+          <button className="story-complete-button" onClick={onComplete}>完成这个实验 ✓</button>
+        ) : (
+          <button onClick={() => onSelect(safeIndex + 1)}>下一阶段 →</button>
+        )}
       </nav>
     </section>
   )

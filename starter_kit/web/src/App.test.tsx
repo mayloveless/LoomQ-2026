@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, CuratedWorkspace, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, GenericWorkspace, SCENARIOS, ScenarioContext } from './App'
+import { ConceptCard, CuratedWorkspace, CURATED_COMPLETIONS, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExperimentCompletion, ExplorerScreen, GenericWorkspace, nextCuratedScenarioId, SCENARIOS, ScenarioContext, shouldCelebrateCompletion } from './App'
 import { ExperimentStory } from './ExperimentStory'
 import type { ExperimentStoryModel } from './storyModel'
 import type { StateEntry, TraceEvent } from './types'
@@ -59,7 +59,7 @@ describe('Task 13D scenario entry', () => {
 describe('Task 13G Explorer entry', () => {
   it('prefills the selected stable prompt without rendering scenario pickers', () => {
     const markup = renderToStaticMarkup(
-      <ExplorerScreen initialScenarioId="search" onNavigate={() => undefined} />,
+      <ExplorerScreen initialScenarioId="search" onNavigate={() => undefined} onSelectExperiment={() => undefined} />,
     )
 
     expect(markup).toContain(
@@ -79,7 +79,7 @@ describe('Task 13G Explorer entry', () => {
 
   it('opens free exploration with an empty prompt', () => {
     const markup = renderToStaticMarkup(
-      <ExplorerScreen initialScenarioId={null} onNavigate={() => undefined} />,
+      <ExplorerScreen initialScenarioId={null} onNavigate={() => undefined} onSelectExperiment={() => undefined} />,
     )
 
     expect(markup).toMatch(/<textarea[^>]*><\/textarea>/)
@@ -138,7 +138,7 @@ describe('Task 13O curated experiment story frame', () => {
 
   it('renders the five-part frame and explains Oracle as a direction flip first', () => {
     const markup = renderToStaticMarkup(
-      <ExperimentStory model={model} activeStageIndex={0} onSelect={() => undefined} />,
+      <ExperimentStory model={model} activeStageIndex={0} onSelect={() => undefined} onComplete={() => undefined} />,
     )
 
     expect(markup).toContain('当前阶段要做什么')
@@ -154,7 +154,7 @@ describe('Task 13O curated experiment story frame', () => {
     expect(markup).toContain('相位翻转')
     expect(markup).toContain('Phase Flip')
     expect(markup).toContain('上一阶段')
-    expect(markup).toContain('下一阶段')
+    expect(markup).toContain('完成这个实验 ✓')
   })
 
   it('renders the curated two-column Program and Story layout with range highlights', () => {
@@ -182,11 +182,17 @@ describe('Task 13O curated experiment story frame', () => {
         activeStep={2}
         qasmOpen
         guideOpen
+        completed={false}
+        celebrating={false}
         onSelectStoryStage={() => undefined}
         onSelectStep={() => undefined}
         onQasmOpenChange={() => undefined}
         onDismissGuide={() => undefined}
         onOpenGuide={() => undefined}
+        onComplete={() => undefined}
+        onReturnToStory={() => undefined}
+        onContinue={() => undefined}
+        onBackToExperiments={() => undefined}
       />,
     )
 
@@ -200,6 +206,154 @@ describe('Task 13O curated experiment story frame', () => {
     expect(markup).not.toContain('自动回放')
     expect(markup).not.toContain('查看这一阶段对应的 Gate')
     expect(markup).toContain('先看右边：一次只解释一个阶段')
+  })
+})
+
+describe('Task 13R curated experiment completion', () => {
+  const snapshot = { mode: 'wave' as const, values: [
+    { basis: '0', magnitude: 1, phase: 0, probability: 1 },
+  ] }
+
+  function completionMarkup(scenarioId: 'bell' | 'search' | 'phase', celebrating = false) {
+    return renderToStaticMarkup(
+      <ExperimentCompletion
+        scenarioId={scenarioId}
+        celebrating={celebrating}
+        onReturnToStory={() => undefined}
+        onContinue={() => undefined}
+        onBackToExperiments={() => undefined}
+      />,
+    )
+  }
+
+  it('uses the required Bell completion summary and Grover recommendation', () => {
+    const markup = completionMarkup('bell')
+    expect(markup).toContain('✓ 你已经完成 Bell 实验')
+    expect(markup).toContain('叠加 → 建立关联 → 测量')
+    expect(markup).toContain('需要整体描述的联合状态')
+    expect(markup).toContain('继续看 Grover 搜索 →')
+  })
+
+  it('uses the required Grover completion summary and Phase recommendation', () => {
+    const markup = completionMarkup('search')
+    expect(markup).toContain('✓ 你已经完成 Grover 搜索实验')
+    expect(markup).toContain('准备候选 → 翻转目标方向 → 干涉增强 → 测量')
+    expect(markup).toContain('通过干涉把它变成测量优势')
+    expect(markup).toContain('继续看相位实验 →')
+  })
+
+  it('uses the required Phase completion summary and free exploration recommendation', () => {
+    const markup = completionMarkup('phase')
+    expect(markup).toContain('✓ 你已经完成相位实验')
+    expect(markup).toContain('概率相同 → 改变方向关系 → 后续行为可能不同')
+    expect(markup).toContain('相对相位会影响之后的干涉')
+    expect(markup).toContain('开始自由探索 →')
+  })
+
+  it('keeps the recommendation order Bell to Grover to Phase to free explore', () => {
+    expect(nextCuratedScenarioId('bell')).toBe('search')
+    expect(nextCuratedScenarioId('search')).toBe('phase')
+    expect(nextCuratedScenarioId('phase')).toBeNull()
+  })
+
+  it('resolves every recommendation through the existing stable scenario prompts', () => {
+    const search = SCENARIOS.find((scenario) => scenario.id === CURATED_COMPLETIONS.bell.nextScenarioId)
+    const phase = SCENARIOS.find((scenario) => scenario.id === CURATED_COMPLETIONS.search.nextScenarioId)
+    expect(search?.prompt).toBe('设计一个 2 比特 Grover 搜索电路，搜索目标为 |11>。先创建均匀叠加，再实现标记 |11> 的 Oracle 和扩散算子，最后测量；请使用 OpenQASM 2.0 基础门展开，不定义自定义 gate。')
+    expect(phase?.prompt).toBe('生成一个带相对相位的 Bell- 态，不要求测量')
+  })
+
+  it('always provides a route back to the experiment list and the last stage', () => {
+    const markup = completionMarkup('bell')
+    expect(markup).toContain('返回实验列表')
+    expect(markup).toContain('返回最后阶段')
+  })
+
+  it('renders the one-shot decoration only while celebration is active', () => {
+    expect(completionMarkup('bell', true)).toContain('class="completion-confetti" aria-hidden="true"')
+    expect(completionMarkup('bell', false)).not.toContain('class="completion-confetti"')
+  })
+
+  it('skips celebration animation when reduced motion is preferred', () => {
+    expect(shouldCelebrateCompletion(true)).toBe(false)
+    expect(shouldCelebrateCompletion(false)).toBe(true)
+  })
+
+  it('keeps the normal next-stage action before the final stage', () => {
+    const stage = {
+      id: 'start', number: '01', label: '起点', purpose: '准备状态。', action: '初始化。',
+      importance: '建立起点。', terminology: null, stepIndex: 0, gateIndices: [0],
+      before: snapshot, after: snapshot,
+    }
+    const model: ExperimentStoryModel = {
+      scenarioId: 'bell',
+      stages: [stage, { ...stage, id: 'measure', number: '02', label: '测量' }],
+    }
+    const markup = renderToStaticMarkup(
+      <ExperimentStory model={model} activeStageIndex={0} onSelect={() => undefined} onComplete={() => undefined} />,
+    )
+    expect(markup).toContain('下一阶段 →')
+    expect(markup).not.toContain('完成这个实验 ✓')
+  })
+
+  it('keeps Program and QASM visible when the right column enters completion', () => {
+    const model: ExperimentStoryModel = {
+      scenarioId: 'bell',
+      stages: [{
+        id: 'start', number: '01', label: '起点', purpose: '准备状态。', action: '初始化。',
+        importance: '建立起点。', terminology: null, stepIndex: 0, gateIndices: [0],
+        before: snapshot, after: snapshot,
+      }],
+    }
+    const markup = renderToStaticMarkup(
+      <CuratedWorkspace
+        story={model}
+        steps={[{
+          seq: 0, layer: 'circuit', stage: 'initial_state', executor: 'local', status: 'ok', summary: '初始状态',
+          data: { state_after: [{ basis: '0', probability: 1 }] },
+        }]}
+        qasm={'OPENQASM 2.0;\nqreg q[1];'}
+        circuitGoal="Bell 实验"
+        activeStoryStage={0}
+        activeStep={0}
+        qasmOpen
+        guideOpen={false}
+        completed
+        celebrating={false}
+        onSelectStoryStage={() => undefined}
+        onSelectStep={() => undefined}
+        onQasmOpenChange={() => undefined}
+        onDismissGuide={() => undefined}
+        onOpenGuide={() => undefined}
+        onComplete={() => undefined}
+        onReturnToStory={() => undefined}
+        onContinue={() => undefined}
+        onBackToExperiments={() => undefined}
+      />,
+    )
+    expect(markup).toContain('PROGRAM')
+    expect(markup).toContain('OpenQASM · 收起代码')
+    expect(markup).toContain('✓ 你已经完成 Bell 实验')
+    expect(markup).not.toContain('当前阶段要做什么')
+  })
+
+  it('opens the recommended experiment in ready state without a result workspace', () => {
+    const markup = renderToStaticMarkup(
+      <ExplorerScreen initialScenarioId="search" onNavigate={() => undefined} onSelectExperiment={() => undefined} />,
+    )
+    expect(markup).toContain('Grover 搜索实验已准备好')
+    expect(markup).toContain(SCENARIOS.find((scenario) => scenario.id === 'search')!.prompt.replaceAll('>', '&gt;'))
+    expect(markup).not.toContain('result-workspace')
+    expect(markup).not.toContain('experiment-completion')
+  })
+
+  it('opens the final free exploration entry with no inherited prompt or completion', () => {
+    const markup = renderToStaticMarkup(
+      <ExplorerScreen initialScenarioId={null} onNavigate={() => undefined} onSelectExperiment={() => undefined} />,
+    )
+    expect(markup).toMatch(/<textarea[^>]*><\/textarea>/)
+    expect(markup).not.toContain('experiment-completion')
+    expect(markup).not.toContain('继续看 Grover 搜索')
   })
 })
 
@@ -264,5 +418,6 @@ describe('Task 13Q generic two-column Explorer', () => {
     expect(markup).toContain('stage-highlighted active')
     expect(markup).not.toContain('CIRCUIT STEPS')
     expect(markup).not.toContain('data-layout="curated-two-column"')
+    expect(markup).not.toContain('experiment-completion')
   })
 })

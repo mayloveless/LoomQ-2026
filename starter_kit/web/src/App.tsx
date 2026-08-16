@@ -18,7 +18,7 @@ import {
   stepTitle,
 } from './viewModel'
 import { ExperimentStory } from './ExperimentStory'
-import { buildExperimentStory, type ExperimentStoryModel } from './storyModel'
+import { buildExperimentStory, type CuratedScenarioId, type ExperimentStoryModel } from './storyModel'
 import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
 import { AdvancedCapabilityScreen } from './AdvancedCapability'
@@ -35,6 +35,50 @@ const LOADING_STAGES = [
 
 export const DEFAULT_RESULT_AUTOPLAY = false
 const CURATED_GUIDE_STORAGE_KEY = 'loomq.curated-story-guide-dismissed'
+
+type CuratedCompletionCopy = {
+  title: string
+  recap: string
+  summary: string
+  nextIntro: string
+  nextLabel: string
+  nextScenarioId: CuratedScenarioId | null
+}
+
+export const CURATED_COMPLETIONS: Record<CuratedScenarioId, CuratedCompletionCopy> = {
+  bell: {
+    title: '✓ 你已经完成 Bell 实验',
+    recap: '叠加 → 建立关联 → 测量',
+    summary: '你看到两个量子位不再只能分别理解，而会形成一个需要整体描述的联合状态。',
+    nextIntro: '接下来看看：这种量子状态变化怎样真正参与一次算法。',
+    nextLabel: '继续看 Grover 搜索 →',
+    nextScenarioId: 'search',
+  },
+  search: {
+    title: '✓ 你已经完成 Grover 搜索实验',
+    recap: '准备候选 → 翻转目标方向 → 干涉增强 → 测量',
+    summary: '你看到量子搜索不是逐项返回答案，而是先留下方向差异，再通过干涉把它变成测量优势。',
+    nextIntro: '刚才真正起作用的关键之一，是“相位”。接下来单独看看它。',
+    nextLabel: '继续看相位实验 →',
+    nextScenarioId: 'phase',
+  },
+  phase: {
+    title: '✓ 你已经完成相位实验',
+    recap: '概率相同 → 改变方向关系 → 后续行为可能不同',
+    summary: '你看到“当前测量概率一样”并不等于“量子状态一样”，相对相位会影响之后的干涉。',
+    nextIntro: '三个正式实验已经看完，现在可以自己描述一个量子程序。',
+    nextLabel: '开始自由探索 →',
+    nextScenarioId: null,
+  },
+}
+
+export function nextCuratedScenarioId(scenarioId: CuratedScenarioId): CuratedScenarioId | null {
+  return CURATED_COMPLETIONS[scenarioId].nextScenarioId
+}
+
+export function shouldCelebrateCompletion(prefersReducedMotion: boolean): boolean {
+  return !prefersReducedMotion
+}
 
 function shouldShowCuratedGuide(): boolean {
   if (typeof window === 'undefined') return true
@@ -612,14 +656,18 @@ export function ProgramPanel({
     const container = codeViewRef.current
     const target = firstHighlightedLineRef.current
     if (!qasmOpen || !container || !target) return
-    const containerRect = container.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    const nextTop = container.scrollTop
-      + targetRect.top
-      - containerRect.top
-      - (container.clientHeight - targetRect.height) / 2
-    // 只滚动到真实映射出的第一行，不猜测缺失的 QASM 范围。
-    container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+    // 等面板完成本轮布局，再依据代码行在滚动容器中的真实位置定位。
+    const frame = window.requestAnimationFrame(() => {
+      const containerRect = container.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const nextTop = container.scrollTop
+        + targetRect.top
+        - containerRect.top
+        - (container.clientHeight - targetRect.height) / 2
+      // 立即落到当前高亮范围，避免 smooth scroll 在快速切换阶段时被下一次滚动取消。
+      container.scrollTo({ top: Math.max(0, nextTop), behavior: 'auto' })
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [activeStep, firstHighlightedLine, qasmOpen])
 
   return (
@@ -673,6 +721,45 @@ export function ProgramPanel({
   )
 }
 
+export function ExperimentCompletion({
+  scenarioId,
+  celebrating,
+  onReturnToStory,
+  onContinue,
+  onBackToExperiments,
+}: {
+  scenarioId: CuratedScenarioId
+  celebrating: boolean
+  onReturnToStory: () => void
+  onContinue: () => void
+  onBackToExperiments: () => void
+}) {
+  const completion = CURATED_COMPLETIONS[scenarioId]
+
+  return (
+    <section className="experiment-completion" aria-live="polite">
+      {celebrating && (
+        <div className="completion-confetti" aria-hidden="true">
+          {Array.from({ length: 12 }, (_, index) => <i key={index} />)}
+        </div>
+      )}
+      <div className="completion-check" aria-hidden="true">✓</div>
+      <p className="completion-kicker">EXPERIMENT COMPLETE</p>
+      <h2>{completion.title}</h2>
+      <p className="completion-recap">{completion.recap}</p>
+      <p className="completion-summary">{completion.summary}</p>
+      <div className="completion-next">
+        <p>{completion.nextIntro}</p>
+        <button className="completion-primary" onClick={onContinue}>{completion.nextLabel}</button>
+      </div>
+      <nav className="completion-actions" aria-label="实验完成后的操作">
+        <button onClick={onReturnToStory}>← 返回最后阶段</button>
+        <button onClick={onBackToExperiments}>返回实验列表</button>
+      </nav>
+    </section>
+  )
+}
+
 export function CuratedWorkspace({
   story,
   steps,
@@ -682,11 +769,17 @@ export function CuratedWorkspace({
   activeStep,
   qasmOpen,
   guideOpen,
+  completed,
+  celebrating,
   onSelectStoryStage,
   onSelectStep,
   onQasmOpenChange,
   onDismissGuide,
   onOpenGuide,
+  onComplete,
+  onReturnToStory,
+  onContinue,
+  onBackToExperiments,
 }: {
   story: ExperimentStoryModel
   steps: TraceEvent[]
@@ -696,11 +789,17 @@ export function CuratedWorkspace({
   activeStep: number
   qasmOpen: boolean
   guideOpen: boolean
+  completed: boolean
+  celebrating: boolean
   onSelectStoryStage: (index: number) => void
   onSelectStep: (index: number) => void
   onQasmOpenChange: (open: boolean) => void
   onDismissGuide: () => void
   onOpenGuide: () => void
+  onComplete: () => void
+  onReturnToStory: () => void
+  onContinue: () => void
+  onBackToExperiments: () => void
 }) {
   const stage = story.stages[Math.min(story.stages.length - 1, Math.max(0, activeStoryStage))]
 
@@ -719,10 +818,10 @@ export function CuratedWorkspace({
 
       <section className="curated-story-panel panel" aria-label="Story · 实验解释">
         <header className="curated-story-heading">
-          <div><span>STORY</span><strong>理解这段程序</strong></div>
-          <button onClick={onOpenGuide}>如何阅读这个页面？</button>
+          <div><span>{completed ? 'COMPLETE' : 'STORY'}</span><strong>{completed ? '实验完成' : '理解这段程序'}</strong></div>
+          {!completed && <button onClick={onOpenGuide}>如何阅读这个页面？</button>}
         </header>
-        {guideOpen && (
+        {!completed && guideOpen && (
           <aside className="curated-guide" aria-label="Story Mode 新手引导">
             <ol>
               <li><b>1</b><span>先看右边：一次只解释一个阶段</span></li>
@@ -732,11 +831,22 @@ export function CuratedWorkspace({
             <button onClick={onDismissGuide}>知道了</button>
           </aside>
         )}
-        <ExperimentStory
-          model={story}
-          activeStageIndex={activeStoryStage}
-          onSelect={onSelectStoryStage}
-        />
+        {completed ? (
+          <ExperimentCompletion
+            scenarioId={story.scenarioId}
+            celebrating={celebrating}
+            onReturnToStory={onReturnToStory}
+            onContinue={onContinue}
+            onBackToExperiments={onBackToExperiments}
+          />
+        ) : (
+          <ExperimentStory
+            model={story}
+            activeStageIndex={activeStoryStage}
+            onSelect={onSelectStoryStage}
+            onComplete={onComplete}
+          />
+        )}
       </section>
     </section>
   )
@@ -844,9 +954,11 @@ export function GenericWorkspace({
 export function ExplorerScreen({
   initialScenarioId,
   onNavigate,
+  onSelectExperiment,
 }: {
   initialScenarioId: string | null
   onNavigate: (screen: AppScreen) => void
+  onSelectExperiment: (scenarioId: CuratedScenarioId | null) => void
 }) {
   const initialScenario = SCENARIOS.find((scenario) => scenario.id === initialScenarioId)
   const [prompt, setPrompt] = useState(initialScenario?.prompt ?? '')
@@ -861,6 +973,8 @@ export function ExplorerScreen({
   const [qasmOpen, setQasmOpen] = useState(true)
   const [curatedQasmOpen, setCuratedQasmOpen] = useState(true)
   const [curatedGuideOpen, setCuratedGuideOpen] = useState(shouldShowCuratedGuide)
+  const [storyCompleted, setStoryCompleted] = useState(false)
+  const [celebrating, setCelebrating] = useState(false)
 
   const steps = useMemo(() => circuitSteps(result?.events ?? []), [result])
   const warnings = useMemo(() => circuitWarnings(result?.events ?? []), [result])
@@ -884,7 +998,16 @@ export function ExplorerScreen({
     setActiveStoryStage(0)
     setActiveStep(experimentStory.stages[0].stepIndex)
     setAutoPlaying(false)
+    setStoryCompleted(false)
+    setCelebrating(false)
   }, [experimentStory])
+
+  useEffect(() => {
+    if (!celebrating) return
+    // 礼花只播放一次并在 800ms 后退出，不参与任何实验状态计算。
+    const timer = window.setTimeout(() => setCelebrating(false), 800)
+    return () => window.clearTimeout(timer)
+  }, [celebrating])
 
   useEffect(() => {
     if (!autoPlaying || steps.length < 2) return
@@ -911,6 +1034,8 @@ export function ExplorerScreen({
     setAutoPlaying(false)
     setQasmOpen(true)
     setCuratedQasmOpen(true)
+    setStoryCompleted(false)
+    setCelebrating(false)
     setLoading(true)
     setError('')
     try {
@@ -962,6 +1087,20 @@ export function ExplorerScreen({
     setAutoPlaying(false)
     setActiveStoryStage(nextIndex)
     setActiveStep(experimentStory.stages[nextIndex].stepIndex)
+  }
+
+  function completeStory() {
+    if (!experimentStory) return
+    setStoryCompleted(true)
+    const reduceMotion = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    setCelebrating(shouldCelebrateCompletion(Boolean(reduceMotion)))
+  }
+
+  function continueExperiment() {
+    if (!experimentStory) return
+    // 场景切换交给 App 重新挂载 Explorer，确保旧结果与步骤不会残留。
+    onSelectExperiment(nextCuratedScenarioId(experimentStory.scenarioId))
   }
 
   function toggleAutoPlayback() {
@@ -1039,11 +1178,20 @@ export function ExplorerScreen({
           activeStep={activeStep}
           qasmOpen={curatedQasmOpen}
           guideOpen={curatedGuideOpen}
+          completed={storyCompleted}
+          celebrating={celebrating}
           onSelectStoryStage={selectStoryStage}
           onSelectStep={selectStep}
           onQasmOpenChange={setCuratedQasmOpen}
           onDismissGuide={dismissCuratedGuide}
           onOpenGuide={() => setCuratedGuideOpen(true)}
+          onComplete={completeStory}
+          onReturnToStory={() => {
+            setStoryCompleted(false)
+            setCelebrating(false)
+          }}
+          onContinue={continueExperiment}
+          onBackToExperiments={() => onNavigate('experiments')}
         />
       )}
 
@@ -1101,8 +1249,13 @@ function App() {
   }
   return (
     <ExplorerScreen
+      key={`explorer-${selectedExperimentId ?? 'free'}`}
       initialScenarioId={selectedExperimentId}
       onNavigate={navigate}
+      onSelectExperiment={(scenarioId) => {
+        setSelectedExperimentId(scenarioId)
+        setScreen('explorer')
+      }}
     />
   )
 }
