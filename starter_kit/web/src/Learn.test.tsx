@@ -5,63 +5,61 @@ import { LearnScreen } from './Learn'
 
 const plainText = (markup: string) => markup.replace(/<[^>]*>/g, '')
 
-describe('Task 13F-5 quantum term visual language', () => {
-  it('opens on an independent Learn screen with a real three-step program', () => {
+describe('Task 13J compact three-step Learn experience', () => {
+  it('keeps one compact Prepare, H, Measure experience after Why Quantum', () => {
     const markup = renderToStaticMarkup(<App />)
     const text = plainText(markup)
 
     expect(text).toContain('让开发者先跨过量子计算的专业壁垒')
-    expect(text).toContain('生成、理解、验证和修复量子程序')
-    expect(text).toContain('找到合适的运行平台')
-    expect(text).toContain('30 秒看懂一个量子程序')
+    expect(text).toContain('量子计算不是“更快的电脑”')
     expect(text).toContain('跟着一个量子比特，看懂量子程序怎么运行')
-    expect(markup).not.toContain('CIRCUIT STEPS')
+    expect(text).toContain('01Prepare准备 |0⟩')
+    expect(text).toContain('02H产生叠加')
+    expect(text).toContain('03Measure读取结果')
+    expect(markup.match(/role="tab"/g)).toHaveLength(3)
+    expect(markup).not.toContain('class="learn-code-window"')
+    expect(markup).not.toContain('class="learn-program-step')
+  })
+
+  it('explains circuit once and keeps source as hidden evidence by default', () => {
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
+    const text = plainText(markup)
+
+    expect(text).toContain('什么是量子电路？')
+    expect(text).toContain('按顺序执行的一组量子操作')
+    expect(text.indexOf('什么是量子电路？')).toBeLessThan(text.indexOf('01Prepare准备 |0⟩'))
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain('id="learn-qasm-source"')
+    expect(markup).toContain('hidden=""')
     expect(markup).toContain('qreg q[1];')
     expect(markup).toContain('h q[0];')
     expect(markup).toContain('measure q[0] -&gt; c[0];')
-    expect(markup).not.toContain('mental-model.ts')
+    expect(markup).toContain('class="is-highlighted"><em>03</em><code>qreg q[1];</code>')
   })
 
-  it('anchors circuit as an ordered program before the three guided steps', () => {
+  it('keeps state change primary and retains measurement semantics in the implementation', () => {
     const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
     const text = plainText(markup)
 
-    expect(text).toContain('一个量子电路，三步看完')
-    expect(text).toContain('量子电路（Quantum Circuit）可以先理解成一段按顺序执行的程序')
-    expect(text).toContain('可以先理解成一段按顺序执行的程序')
-    expect(text).toContain('准备量子状态')
-    expect(text).toContain('量子门改变状态')
-    expect(text).toContain('测量读取结果')
-    expect(text.indexOf('可以先理解成一段按顺序执行的程序')).toBeLessThan(text.indexOf('准备一个量子比特'))
-  })
-
-  it('explains superposition from H state changes before recapping concepts', () => {
-    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
-    const text = plainText(markup)
-
-    expect(text).toContain('量子概念')
-    expect(text).toContain('这就叫：叠加（Superposition）')
-    expect(text).toContain('它不等同于普通程序“已经随机选好了一个结果，只是你还不知道”。')
-    expect(text).toContain('一次运行')
-    expect(text).toContain('重复运行 1,000 次（Shots）')
+    expect(markup).toContain('class="learn-compact-visual"')
+    expect(markup).toContain('class="learn-compact-probability"')
+    expect(text).toContain('当前量子状态 · 确定')
+    expect(text).toContain('|0⟩100%')
     expect(text).toContain('你刚刚已经读完了第一个量子电路')
     for (const term of ['量子比特', '量子状态', '量子门', '量子电路', '测量']) {
       expect(markup).toContain(`<strong>${term}</strong>`)
     }
-    expect(markup).not.toMatch(/<dt><strong>[^<]+<\/strong><small>/)
-    expect(text).not.toContain('纠缠')
   })
 
-  it('uses static two-level term emphasis without glossary interactions', () => {
+  it('uses static term emphasis without restoring glossary or old teaching DOM', () => {
     const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
 
     expect(markup).toContain('class="quantum-term"')
-    expect(markup).toContain('class="learn-concept-label"')
-    expect(markup).toContain('class="quantum-concept-name"')
+    expect(markup).not.toContain('class="learn-concept-label"')
+    expect(markup).not.toContain('class="quantum-concept-name"')
     expect(markup).not.toContain('quantum-concept-marker')
     expect(markup).not.toContain('term-trigger')
     expect(markup).not.toContain('term-popover')
-    expect(markup).not.toContain('aria-expanded')
   })
 
   it('keeps the technical explanation collapsed by default', () => {

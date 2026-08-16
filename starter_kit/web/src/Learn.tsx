@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type FocusEvent, type ReactNode } from 'react'
 import { GlobalNavigation, type AppScreen } from './Navigation'
 
 type LearnScreenProps = {
@@ -24,7 +24,122 @@ const RECAP = [
   ['测量', '把量子状态读取为经典结果'],
 ]
 
+type LearnStepId = 'prepare' | 'hadamard' | 'measure'
+
+type LearnStep = {
+  id: LearnStepId
+  number: string
+  label: string
+  title: string
+  summary: string
+  sourceLine: number
+}
+
+const LEARN_STEPS: LearnStep[] = [
+  { id: 'prepare', number: '01', label: 'Prepare', title: '准备 |0⟩', summary: '程序先准备一个确定的量子状态。', sourceLine: 3 },
+  { id: 'hadamard', number: '02', label: 'H', title: '产生叠加', summary: 'H 把原本确定的 |0⟩ 变成同时保留两种可能性的状态。', sourceLine: 5 },
+  { id: 'measure', number: '03', label: 'Measure', title: '读取结果', summary: '测量把量子状态读取成经典的 0 或 1。', sourceLine: 6 },
+]
+
+const QASM_LINES = [
+  'OPENQASM 2.0;',
+  'include "qelib1.inc";',
+  'qreg q[1];',
+  'creg c[1];',
+  'h q[0];',
+  'measure q[0] -> c[0];',
+]
+
+type LearnProbabilityRowProps = {
+  basis: string
+  probability: number
+  subdued?: boolean
+  animate?: boolean
+}
+
+// 概率条只表达教学中的状态分布，不模拟真实的物理运动。
+function LearnProbabilityRow({ basis, probability, subdued = false, animate = false }: LearnProbabilityRowProps) {
+  return (
+    <div className={`learn-compact-probability${subdued ? ' is-subdued' : ''}${animate ? ' is-animated' : ''}`}>
+      <code>{basis}</code>
+      <i><b style={{ width: `${probability}%` }} /></i>
+      <strong>{probability}%</strong>
+    </div>
+  )
+}
+
+function LearnStateVisual({ step }: { step: LearnStepId }) {
+  if (step === 'hadamard') {
+    return (
+      <div className="learn-compact-state-change" aria-label="H 执行前后从百分之百的零态变为零态和一态各百分之五十">
+        <div className="learn-compact-snapshot">
+          <span>执行前</span>
+          <LearnProbabilityRow basis="|0⟩" probability={100} />
+          <LearnProbabilityRow basis="|1⟩" probability={0} subdued />
+        </div>
+        <div className="learn-compact-gate"><strong>H</strong><i>→</i></div>
+        <div className="learn-compact-snapshot is-after">
+          <span>执行后 · 叠加</span>
+          <LearnProbabilityRow basis="|0⟩" probability={50} animate />
+          <LearnProbabilityRow basis="|1⟩" probability={50} animate />
+        </div>
+      </div>
+    )
+  }
+
+  if (step === 'measure') {
+    return (
+      <div className="learn-compact-measurement" aria-label="一次测量与重复运行的区别">
+        <div>
+          <span>一次运行</span>
+          <strong>0 <i>或</i> 1</strong>
+          <p>普通程序只收到一个确定的 bit。</p>
+        </div>
+        <i className="learn-compact-divider" />
+        <div>
+          <span>重复 1,000 次 · shots</span>
+          <LearnProbabilityRow basis="0" probability={50} />
+          <LearnProbabilityRow basis="1" probability={50} />
+          <p>多次结果汇总后，才形成统计分布。</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="learn-compact-prepare" aria-label="初始量子状态为零态百分之百">
+      <span>当前量子状态 · 确定</span>
+      <LearnProbabilityRow basis="|0⟩" probability={100} />
+      <LearnProbabilityRow basis="|1⟩" probability={0} subdued />
+      <p>此时测量只会得到 <code>0</code>。</p>
+    </div>
+  )
+}
+
 export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
+  const [activeStepId, setActiveStepId] = useState<LearnStepId>('prepare')
+  const [sourceOpen, setSourceOpen] = useState(false)
+  const [sourcePinned, setSourcePinned] = useState(false)
+  const activeStep = LEARN_STEPS.find((step) => step.id === activeStepId) ?? LEARN_STEPS[0]
+
+  const selectStep = (stepId: LearnStepId) => {
+    setActiveStepId(stepId)
+    setSourceOpen(false)
+    setSourcePinned(false)
+  }
+
+  const toggleSource = () => {
+    const nextPinned = !sourcePinned
+    setSourcePinned(nextPinned)
+    setSourceOpen(nextPinned)
+  }
+
+  const handleSourceBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget) && !sourcePinned) {
+      setSourceOpen(false)
+    }
+  }
+
   return (
     <main className="learn-shell">
       <GlobalNavigation current="learn" onNavigate={onNavigate} />
@@ -61,7 +176,7 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
           </div>
           <div>
             <p>它并不适合大多数普通程序。量子计算真正有价值的地方，是少数具有特殊结构的问题：适用面很窄，但一旦命中，可能带来传统算法难以达到的优势。</p>
-            <strong>不是所有问题都更快，而是在少数问题上改变可计算性的边界。</strong>
+            <strong>它不是让所有计算都更快，而是为少数经典计算很困难的问题提供新的求解方式。</strong>
           </div>
         </div>
 
@@ -84,107 +199,93 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         </div>
       </section>
 
-      <section className="learn-hero" id="learn-quickstart">
-        <div className="learn-hero-copy">
-          <span className="learn-eyebrow">ONE QUBIT · THREE STEPS</span>
-          <h1>跟着一个<QuantumTerm english="">量子比特</QuantumTerm>，<br />看懂量子程序怎么运行</h1>
-          <p>不需要量子物理背景。我们只运行一个真实的三步程序：</p>
-          <div className="learn-hero-sequence" aria-label="三步程序：准备量子状态，然后用 H 改变状态，最后测量结果">
-            <span>准备量子状态</span><i>→</i><span>用 H 改变状态</span><i>→</i><span>测量结果</span>
-          </div>
-          <a className="learn-primary learn-guide-link" href="#guided-program">从第一步开始 <span>↓</span></a>
-        </div>
-        <div className="learn-code-window" aria-label="单量子比特 OpenQASM 程序">
-          <div className="learn-window-bar"><i /><i /><i /><span>one-qubit.qasm</span></div>
-          <div className="learn-code-lines">
-            <p><em>01</em><code><b>OPENQASM</b> 2.0;</code></p>
-            <p><em>02</em><code><b>include</b> <span>&quot;qelib1.inc&quot;</span>;</code></p>
-            <p className="active"><em>03</em><code>qreg q[<span>1</span>];</code></p>
-            <p><em>04</em><code>creg c[<span>1</span>];</code></p>
-            <p><em>05</em><code>h q[<span>0</span>];</code></p>
-            <p><em>06</em><code>measure q[<span>0</span>] -&gt; c[<span>0</span>];</code></p>
-          </div>
-          <div className="learn-flow">
-            <span>准备 |0⟩</span><i>→</i><span>H 改变状态</span><i>→</i><span>测量读取</span>
-          </div>
-        </div>
-      </section>
-
-      <section className="learn-program" id="guided-program" aria-labelledby="program-heading">
-        <div className="learn-section-heading">
+      {/* 三步教学只保留一套交互骨架，状态变化优先于源码。 */}
+      <section className="learn-quickstart" id="learn-quickstart" aria-labelledby="learn-quickstart-heading">
+        <header className="learn-quickstart-heading">
           <div>
-            <span>GUIDED PROGRAM</span>
-            <h2 id="program-heading">一个量子电路，三步看完</h2>
+            <span>ONE QUBIT · THREE STEPS</span>
+            <h2 id="learn-quickstart-heading">跟着一个<QuantumTerm english="">量子比特</QuantumTerm>，看懂量子程序怎么运行</h2>
+            <p>不需要量子物理背景。先观察每一步的状态变化，需要时再查看它对应的真实源码。</p>
           </div>
-          <p>拿到程序执行的整体框架，观察每条指令让状态发生了什么。</p>
+          <aside>
+            <strong>什么是<QuantumTerm english="Quantum Circuit">量子电路</QuantumTerm>？</strong>
+            <p>可以先理解成：按顺序执行的一组量子操作。</p>
+          </aside>
+        </header>
+
+        <div className="learn-compact-steps" role="tablist" aria-label="单量子比特程序的三个步骤">
+          {LEARN_STEPS.map((step, index) => (
+            <div className="learn-compact-step-slot" key={step.id}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeStepId === step.id}
+                className={activeStepId === step.id ? 'is-active' : ''}
+                onClick={() => selectStep(step.id)}
+              >
+                <span>{step.number}</span>
+                <strong>{step.label}</strong>
+                <small>{step.title}</small>
+              </button>
+              {index < LEARN_STEPS.length - 1 && <i aria-hidden="true">→</i>}
+            </div>
+          ))}
         </div>
-        <div className="learn-circuit-anchor">
-          <p><QuantumTerm english="Quantum Circuit">量子电路</QuantumTerm>可以先理解成一段按顺序执行的程序。</p>
-          <div aria-label="量子电路的三步执行框架">
-            <span>准备量子状态</span><i>→</i><span>量子门改变状态</span><i>→</i><span>测量读取结果</span>
+
+        <div className="learn-compact-workspace">
+          <article className="learn-compact-copy" aria-live="polite">
+            <span>STEP {activeStep.number} · {activeStep.label.toUpperCase()}</span>
+            <h3>{activeStep.title}</h3>
+            <p>{activeStep.summary}</p>
+            {activeStepId === 'prepare' && <small>这个<QuantumTerm english="Qubit">量子比特</QuantumTerm>从确定的 <code>|0⟩</code> 开始。</small>}
+            {activeStepId === 'hadamard' && <small>同时保留两种可能性，就叫<QuantumTerm english="Superposition">叠加</QuantumTerm>。</small>}
+            {activeStepId === 'measure' && <small>一次测量只得到一个结果；统计分布来自重复运行的 <QuantumTerm english="Shots">采样次数</QuantumTerm>。</small>}
+
+            <div
+              className={`learn-source-wrap${sourcePinned ? ' is-pinned' : ''}`}
+              onMouseEnter={() => setSourceOpen(true)}
+              onMouseLeave={() => !sourcePinned && setSourceOpen(false)}
+              onFocusCapture={() => setSourceOpen(true)}
+              onBlurCapture={handleSourceBlur}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSourceOpen(false)
+                  setSourcePinned(false)
+                }
+              }}
+            >
+              <button
+                type="button"
+                className="learn-source-trigger"
+                aria-expanded={sourceOpen}
+                aria-controls="learn-qasm-source"
+                onClick={toggleSource}
+              >
+                查看源码 <span>{sourceOpen ? '−' : '+'}</span>
+              </button>
+              <div
+                className="learn-source-popover"
+                id="learn-qasm-source"
+                role="region"
+                aria-label="完整 OpenQASM 源码"
+                hidden={!sourceOpen}
+              >
+                <header><strong>one-qubit.qasm</strong><small>当前步骤对应第 {activeStep.sourceLine} 行</small></header>
+                <div>
+                  {QASM_LINES.map((line, index) => (
+                    <p className={index + 1 === activeStep.sourceLine ? 'is-highlighted' : ''} key={line}>
+                      <em>{String(index + 1).padStart(2, '0')}</em><code>{line}</code>
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <div className="learn-compact-visual" key={activeStepId}>
+            <header><span>量子状态变化</span><small>{activeStep.number} / 03</small></header>
+            <LearnStateVisual step={activeStepId} />
           </div>
-          <small>下面用一个量子比特，真正按这个顺序运行一遍。</small>
-        </div>
-
-        <div className="learn-step-list">
-          <article className="learn-program-step">
-            <div className="learn-step-index"><span>01</span><i /></div>
-            <div className="learn-step-copy">
-              <span className="learn-step-label">PREPARE</span>
-              <h3>准备一个量子比特</h3>
-              <p>程序先准备一个<QuantumTerm english="Qubit">量子比特</QuantumTerm>。可以暂时把它理解成量子程序正在操作的数据单位；它一开始处于确定的 <code>|0⟩</code> 量子状态。</p>
-              <code className="learn-qasm-line">qreg q[1];</code>
-            </div>
-            <div className="learn-state-card" aria-label="初始状态概率">
-              <span>当前量子状态</span>
-              <div className="learn-probability-row"><code>|0⟩</code><i><b style={{ width: '100%' }} /></i><strong>100%</strong></div>
-              <div className="learn-probability-row muted"><code>|1⟩</code><i><b style={{ width: '0%' }} /></i><strong>0%</strong></div>
-              <p>此时结果是确定的：只有 <code>|0⟩</code>。</p>
-            </div>
-          </article>
-
-          <article className="learn-program-step learn-step-featured">
-            <div className="learn-step-index"><span>02</span><i /></div>
-            <div className="learn-step-copy">
-              <span className="learn-step-label">TRANSFORM</span>
-              <h3>执行 H，状态发生变化</h3>
-              <p><code>H</code> 是一个<QuantumTerm english="Quantum Gate">量子门</QuantumTerm>。量子门像一次状态变换：它把原本确定的 <code>|0⟩</code>，变成同时保留两种可能性的状态。</p>
-              <code className="learn-qasm-line">h q[0];</code>
-              <aside className="learn-superposition-note">
-                <span className="learn-concept-label"><i>QUANTUM CONCEPT</i><b>量子概念</b></span>
-                <strong>这就叫：<span className="quantum-concept-name">叠加<span>（Superposition）</span></span></strong>
-                <p>同时保留多个量子可能性，就叫叠加。它不等同于普通程序“已经随机选好了一个结果，只是你还不知道”。</p>
-              </aside>
-            </div>
-            <div className="learn-state-transition" aria-label="H 执行前后的状态变化">
-              <div className="learn-state-card compact">
-                <span>执行前</span>
-                <div className="learn-probability-row"><code>|0⟩</code><i><b style={{ width: '100%' }} /></i><strong>100%</strong></div>
-                <div className="learn-probability-row muted"><code>|1⟩</code><i><b style={{ width: '0%' }} /></i><strong>0%</strong></div>
-              </div>
-              <div className="learn-transition-arrow">H →</div>
-              <div className="learn-state-card compact after">
-                <span>执行后</span>
-                <div className="learn-probability-row"><code>|0⟩</code><i><b style={{ width: '50%' }} /></i><strong>50%</strong></div>
-                <div className="learn-probability-row"><code>|1⟩</code><i><b style={{ width: '50%' }} /></i><strong>50%</strong></div>
-              </div>
-            </div>
-          </article>
-
-          <article className="learn-program-step">
-            <div className="learn-step-index"><span>03</span></div>
-            <div className="learn-step-copy">
-              <span className="learn-step-label">MEASURE</span>
-              <h3>测量，把结果交给普通程序</h3>
-              <p><QuantumTerm english="Measurement">测量</QuantumTerm>把量子状态读取成经典的 <code>0</code> 或 <code>1</code>。一次运行只得到其中一个结果；重复运行很多次，才会看到接近 50% / 50% 的统计分布。</p>
-              <code className="learn-qasm-line">measure q[0] -&gt; c[0];</code>
-            </div>
-            <div className="learn-measurement-card" aria-label="一次测量与重复运行的区别">
-              <div><span>一次运行</span><strong>0 <i>或</i> 1</strong><p>普通程序收到一个确定的 bit</p></div>
-              <i className="learn-measurement-divider" />
-              <div><span><QuantumTerm english="Shots">重复运行 1,000 次</QuantumTerm></span><strong>≈ 50% <i>/</i> 50%</strong><p>多次结果汇总成统计分布</p></div>
-            </div>
-          </article>
         </div>
       </section>
 
