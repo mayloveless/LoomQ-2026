@@ -18,7 +18,7 @@ import {
   stepTitle,
 } from './viewModel'
 import { ExperimentStory } from './ExperimentStory'
-import { buildExperimentStory } from './storyModel'
+import { buildExperimentStory, type ExperimentStoryModel } from './storyModel'
 import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
 import { AdvancedCapabilityScreen } from './AdvancedCapability'
@@ -28,14 +28,22 @@ import { SCENARIOS, type Scenario } from './scenarios'
 export { SCENARIOS } from './scenarios'
 
 const LOADING_STAGES = [
-  '理解你的问题',
-  '生成量子程序',
-  '执行本地语法校验',
-  '验证量子状态',
+  '理解需求',
+  '生成并校验程序',
   '准备可视化解释',
 ]
 
 export const DEFAULT_RESULT_AUTOPLAY = false
+const CURATED_GUIDE_STORAGE_KEY = 'loomq.curated-story-guide-dismissed'
+
+function shouldShowCuratedGuide(): boolean {
+  if (typeof window === 'undefined') return true
+  try {
+    return window.localStorage.getItem(CURATED_GUIDE_STORAGE_KEY) !== '1'
+  } catch {
+    return true
+  }
+}
 
 const AGENT_LABELS: Record<string, string> = {
   intent: '理解需求',
@@ -147,13 +155,15 @@ function eventQubits(event: TraceEvent): string[] {
   return []
 }
 
-function CircuitDiagram({
+export function CircuitDiagram({
   steps,
   activeStep,
+  highlightedSteps = [],
   onSelect,
 }: {
   steps: TraceEvent[]
   activeStep: number
+  highlightedSteps?: number[]
   onSelect: (index: number) => void
 }) {
   const qubits = [...new Set(steps.flatMap(eventQubits))]
@@ -194,9 +204,10 @@ function CircuitDiagram({
             const firstRow = Math.min(...involvedRows)
             const lastRow = Math.max(...involvedRows)
             const gate = String(step.data.gate ?? '').toUpperCase()
+            const inStoryStage = highlightedSteps.includes(stepIndex)
             return (
               <button
-                className={`circuit-operation ${stepIndex === activeStep ? 'active' : ''}`}
+                className={`circuit-operation${inStoryStage ? ' stage-highlighted' : ''}${stepIndex === activeStep ? ' active' : ''}`}
                 key={step.seq}
                 ref={stepIndex === activeStep ? activeOperationRef : undefined}
                 onClick={() => onSelect(stepIndex)}
@@ -512,19 +523,19 @@ export function LoadingProcess() {
       <div className="loading-process-heading">
         <span className="loading-orbit" aria-hidden="true">⌁</span>
         <div>
-          <h2>LoomQ 正在准备量子程序</h2>
-          <p>以下是等待阶段提示，真实验证结果将在请求完成后展示。</p>
+          <h2>正在准备你的量子实验</h2>
+          <p>LoomQ 正在把自然语言需求变成一个经过验证、可以逐步解释的量子程序。</p>
         </div>
       </div>
       <ol>
-        {LOADING_STAGES.map((stage, index) => (
-          <li key={stage} style={{ animationDelay: `${index * .72}s` }}>
+        {LOADING_STAGES.map((stage) => (
+          <li key={stage}>
             <i aria-hidden="true" />
             <span>{stage}</span>
           </li>
         ))}
       </ol>
-      <small>过程提示 · 不预先声明校验或验证结果</small>
+      <small>请求完成后会一次性展示真实结果。</small>
     </div>
   )
 }
@@ -533,12 +544,6 @@ export function EmptyWorkspace({ loading = false, scenario }: { loading?: boolea
   if (loading) {
     return (
       <div className="workspace empty-workspace loading-workspace">
-        <div className="empty-rail panel" aria-hidden="true">
-          <span className="rail-label">QUANTUM EXPLORATION</span>
-          <div className="skeleton-line long" />
-          <div className="skeleton-line" />
-          <div className="skeleton-line short" />
-        </div>
         <div className="empty-main panel"><LoadingProcess /></div>
       </div>
     )
@@ -569,6 +574,131 @@ export function EmptyWorkspace({ loading = false, scenario }: { loading?: boolea
   )
 }
 
+export function CuratedWorkspace({
+  story,
+  steps,
+  qasm,
+  circuitGoal,
+  activeStoryStage,
+  activeStep,
+  qasmOpen,
+  guideOpen,
+  onSelectStoryStage,
+  onSelectStep,
+  onQasmOpenChange,
+  onDismissGuide,
+  onOpenGuide,
+}: {
+  story: ExperimentStoryModel
+  steps: TraceEvent[]
+  qasm: string
+  circuitGoal: string
+  activeStoryStage: number
+  activeStep: number
+  qasmOpen: boolean
+  guideOpen: boolean
+  onSelectStoryStage: (index: number) => void
+  onSelectStep: (index: number) => void
+  onQasmOpenChange: (open: boolean) => void
+  onDismissGuide: () => void
+  onOpenGuide: () => void
+}) {
+  const stage = story.stages[Math.min(story.stages.length - 1, Math.max(0, activeStoryStage))]
+  const activeLine = steps[activeStep]
+    ? executableLineIndex(qasm, Number(steps[activeStep].data.operation_index ?? -1))
+    : -1
+  const stageLines = new Set(stage.gateIndices.flatMap((stepIndex) => {
+    const step = steps[stepIndex]
+    if (!step) return []
+    const line = executableLineIndex(qasm, Number(step.data.operation_index ?? -1))
+    return line >= 0 ? [line] : []
+  }))
+  const firstStageLine = stageLines.size ? Math.min(...stageLines) : -1
+  const curatedCodeViewRef = useRef<HTMLDivElement>(null)
+  const firstStageLineRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const container = curatedCodeViewRef.current
+    const target = firstStageLineRef.current
+    if (!qasmOpen || !container || !target) return
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const nextTop = container.scrollTop
+      + targetRect.top
+      - containerRect.top
+      - (container.clientHeight - targetRect.height) / 2
+    // Story 切换时只滚动到真实映射出的第一行，不猜测缺失的 QASM 范围。
+    container.scrollTo({ top: Math.max(0, nextTop), behavior: 'smooth' })
+  }, [activeStoryStage, firstStageLine, qasmOpen])
+
+  return (
+    <section className="workspace result-workspace curated-workspace" data-layout="curated-two-column">
+      <section className="curated-program panel" aria-label="Program · Circuit 与 QASM">
+        <header className="curated-program-heading">
+          <div><span>PROGRAM</span><strong>电路与源码</strong></div>
+          <p><i>✓</i> 已生成并通过 LoomQ 验证</p>
+        </header>
+        <div className="curated-program-goal"><span>实验目标</span><p>{circuitGoal}</p></div>
+        <CircuitDiagram
+          steps={steps}
+          activeStep={activeStep}
+          highlightedSteps={stage.gateIndices}
+          onSelect={onSelectStep}
+        />
+        <details
+          className="qasm-disclosure curated-qasm"
+          open={qasmOpen}
+          onToggle={(event) => onQasmOpenChange(event.currentTarget.open)}
+        >
+          <summary>
+            <span><b className="qasm-icon">Q</b>{qasmOpen ? 'OpenQASM · 收起代码' : 'OpenQASM · 展开代码'}</span>
+            <small>当前阶段范围已标出</small>
+          </summary>
+          <div className="code-view" ref={curatedCodeViewRef} role="region" aria-label="完整 OpenQASM 程序">
+            {qasm.split('\n').map((line, index) => {
+              const inStoryStage = stageLines.has(index)
+              const isActive = index === activeLine
+              return (
+                <div
+                  className={`code-line${inStoryStage ? ' stage-highlighted' : ''}${isActive ? ' highlighted' : ''}`}
+                  key={`${index}-${line}`}
+                  ref={index === firstStageLine ? firstStageLineRef : undefined}
+                >
+                  <span className="line-number">{index + 1}</span>
+                  <code>{line || ' '}</code>
+                  {isActive && <span className="execution-marker">▶</span>}
+                </div>
+              )
+            })}
+          </div>
+        </details>
+      </section>
+
+      <section className="curated-story-panel panel" aria-label="Story · 实验解释">
+        <header className="curated-story-heading">
+          <div><span>STORY</span><strong>理解这段程序</strong></div>
+          <button onClick={onOpenGuide}>如何阅读这个页面？</button>
+        </header>
+        {guideOpen && (
+          <aside className="curated-guide" aria-label="Story Mode 新手引导">
+            <ol>
+              <li><b>1</b><span>先看右边：一次只解释一个阶段</span></li>
+              <li><b>2</b><span>看懂后点“下一阶段”继续</span></li>
+              <li><b>3</b><span>想看实现时，左边 Circuit 与 QASM 会同步标出当前阶段</span></li>
+            </ol>
+            <button onClick={onDismissGuide}>知道了</button>
+          </aside>
+        )}
+        <ExperimentStory
+          model={story}
+          activeStageIndex={activeStoryStage}
+          onSelect={onSelectStoryStage}
+        />
+      </section>
+    </section>
+  )
+}
+
 export function ExplorerScreen({
   initialScenarioId,
   onNavigate,
@@ -587,6 +717,8 @@ export function ExplorerScreen({
   const [error, setError] = useState('')
   const [resultPrompt, setResultPrompt] = useState('')
   const [qasmOpen, setQasmOpen] = useState(false)
+  const [curatedQasmOpen, setCuratedQasmOpen] = useState(true)
+  const [curatedGuideOpen, setCuratedGuideOpen] = useState(shouldShowCuratedGuide)
   const codeViewRef = useRef<HTMLDivElement>(null)
   const highlightedCodeRef = useRef<HTMLDivElement>(null)
 
@@ -638,6 +770,7 @@ export function ExplorerScreen({
     setActiveStoryStage(0)
     setAutoPlaying(false)
     setQasmOpen(false)
+    setCuratedQasmOpen(true)
     setLoading(true)
     setError('')
     try {
@@ -669,13 +802,18 @@ export function ExplorerScreen({
 
   function selectStep(index: number) {
     setAutoPlaying(false)
-    if (experimentStory) {
-      const directStage = experimentStory.stages.findIndex(
-        (stage) => stage.gateIndices.includes(index) || stage.stepIndex === index,
-      )
-      if (directStage >= 0) setActiveStoryStage(directStage)
-    }
     setActiveStep(index)
+  }
+
+  function dismissCuratedGuide() {
+    setCuratedGuideOpen(false)
+    if (typeof window === 'undefined') return
+    try {
+      // 只保存纯 UI 引导状态，不记录实验数据或用户输入。
+      window.localStorage.setItem(CURATED_GUIDE_STORAGE_KEY, '1')
+    } catch {
+      // 存储不可用时仍允许本次会话正常关闭引导。
+    }
   }
 
   function selectStoryStage(index: number) {
@@ -771,7 +909,25 @@ export function ExplorerScreen({
         </div>
       )}
 
-      {result && !backendMode && (
+      {result && !backendMode && experimentStory && currentStoryStage && current && (
+        <CuratedWorkspace
+          story={experimentStory}
+          steps={steps}
+          qasm={qasm}
+          circuitGoal={circuitGoal}
+          activeStoryStage={activeStoryStage}
+          activeStep={activeStep}
+          qasmOpen={curatedQasmOpen}
+          guideOpen={curatedGuideOpen}
+          onSelectStoryStage={selectStoryStage}
+          onSelectStep={selectStep}
+          onQasmOpenChange={setCuratedQasmOpen}
+          onDismissGuide={dismissCuratedGuide}
+          onOpenGuide={() => setCuratedGuideOpen(true)}
+        />
+      )}
+
+      {result && !backendMode && (!experimentStory || !currentStoryStage || !current) && (
         <>
           <section className="workspace result-workspace">
             <aside className="sidebar panel">
@@ -805,117 +961,48 @@ export function ExplorerScreen({
             <section className={`code-panel panel ${qasmOpen ? 'qasm-open' : ''}`}>
               {current ? (
                 <>
-                  <div className={`current-operation${experimentStory ? ' story-current-operation' : ''}`}>
+                  <div className="current-operation">
                     <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
-                    {experimentStory && currentStoryStage ? (
-                      <>
-                        <div className="operation-copy story-operation-copy">
-                          <div>
-                            <span className="eyebrow">CURATED STORY · 阶段 {currentStoryStage.number}</span>
-                            <h2>{currentStoryStage.label}</h2>
-                          </div>
-                          <div className="purpose-copy">
-                            <span>当前阶段要做什么</span>
-                            <p>{currentStoryStage.purpose}</p>
-                          </div>
-                        </div>
-                        <div className="operation-navigation" aria-label="实验阶段控制">
-                          <button
-                            aria-label="上一阶段"
-                            onClick={() => selectStoryStage(activeStoryStage - 1)}
-                            disabled={activeStoryStage === 0}
-                          >
-                            <span>←</span> 上一阶段
-                          </button>
-                          <span className="operation-position">{activeStoryStage + 1} / {experimentStory.stages.length}</span>
-                          <button
-                            className="primary-step"
-                            aria-label="下一阶段"
-                            onClick={() => selectStoryStage(activeStoryStage + 1)}
-                            disabled={activeStoryStage >= experimentStory.stages.length - 1}
-                          >
-                            下一阶段 <span>→</span>
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="operation-copy">
-                          <div>
-                            <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
-                            <h2>{stepTitle(current)}</h2>
-                            {current.stage !== 'initial_state' && currentStatement && (
-                              <code className="current-statement">{currentStatement}</code>
-                            )}
-                          </div>
-                          <div className="purpose-copy">
-                            <span>为什么这里需要它？</span>
-                            <p>{currentPurpose}</p>
-                          </div>
-                        </div>
-                        <div className="operation-navigation" aria-label="电路执行控制">
-                          <button
-                            aria-label="上一步"
-                            onClick={() => selectStep(Math.max(0, activeStep - 1))}
-                            disabled={activeStep === 0}
-                          >
-                            <span>←</span> 上一步
-                          </button>
-                          <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
-                          <button
-                            className="primary-step"
-                            aria-label="下一步"
-                            onClick={() => selectStep(Math.min(steps.length - 1, activeStep + 1))}
-                            disabled={activeStep >= steps.length - 1}
-                          >
-                            下一步 <span>→</span>
-                          </button>
-                          <button
-                            className={`auto-step ${autoPlaying ? 'playing' : ''}`}
-                            aria-label={autoPlaying ? '暂停自动回放' : '开始自动回放'}
-                            onClick={toggleAutoPlayback}
-                          >
-                            {autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                  {experimentStory && currentStoryStage ? (
-                    <details className="story-technical-disclosure story-gate-disclosure">
-                      <summary>
-                        <span>查看这一阶段对应的 Gate</span>
-                        <small>{currentStoryStage.gateIndices.length
-                          ? `${currentStoryStage.gateIndices.length} 个步骤`
-                          : '没有额外 Gate'}</small>
-                      </summary>
-                      <div className="story-gate-list">
-                        {currentStoryStage.gateIndices.length ? (
-                          currentStoryStage.gateIndices.map((stepIndex) => (
-                            <button
-                              className={stepIndex === activeStep ? 'active' : ''}
-                              key={`${currentStoryStage.id}-${stepIndex}`}
-                              onClick={() => selectStep(stepIndex)}
-                            >
-                              <span>{String(stepIndex).padStart(2, '0')}</span>
-                              <strong>{stepTitle(steps[stepIndex])}</strong>
-                            </button>
-                          ))
-                        ) : <p>这一阶段用于观察真实状态，没有执行额外 Gate。</p>}
+                    <div className="operation-copy">
+                      <div>
+                        <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
+                        <h2>{stepTitle(current)}</h2>
+                        {current.stage !== 'initial_state' && currentStatement && (
+                          <code className="current-statement">{currentStatement}</code>
+                        )}
                       </div>
-                    </details>
-                  ) : null}
-                  {experimentStory ? (
-                    <details className="story-technical-disclosure story-circuit-disclosure">
-                      <summary>
-                        <span>查看完整逐 Gate 电路</span>
-                        <small>{steps.length} 个步骤</small>
-                      </summary>
-                      <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
-                    </details>
-                  ) : (
-                    <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
-                  )}
+                      <div className="purpose-copy">
+                        <span>为什么这里需要它？</span>
+                        <p>{currentPurpose}</p>
+                      </div>
+                    </div>
+                    <div className="operation-navigation" aria-label="电路执行控制">
+                      <button
+                        aria-label="上一步"
+                        onClick={() => selectStep(Math.max(0, activeStep - 1))}
+                        disabled={activeStep === 0}
+                      >
+                        <span>←</span> 上一步
+                      </button>
+                      <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
+                      <button
+                        className="primary-step"
+                        aria-label="下一步"
+                        onClick={() => selectStep(Math.min(steps.length - 1, activeStep + 1))}
+                        disabled={activeStep >= steps.length - 1}
+                      >
+                        下一步 <span>→</span>
+                      </button>
+                      <button
+                        className={`auto-step ${autoPlaying ? 'playing' : ''}`}
+                        aria-label={autoPlaying ? '暂停自动回放' : '开始自动回放'}
+                        onClick={toggleAutoPlayback}
+                      >
+                        {autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}
+                      </button>
+                    </div>
+                  </div>
+                  <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
                   <details
                     className="qasm-disclosure"
                     open={qasmOpen}
@@ -950,42 +1037,15 @@ export function ExplorerScreen({
                 <>
                   <div className="state-heading">
                     <span className="eyebrow">量子状态变化</span>
-                    <span className="state-badge"><i /> {currentStoryStage
-                      ? currentStoryStage.label
-                      : current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
+                    <span className="state-badge"><i /> {current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
                   </div>
-                  {experimentStory && currentStoryStage ? (
-                    <>
-                      <ExperimentStory
-                        model={experimentStory}
-                        activeStageIndex={activeStoryStage}
-                        onSelect={selectStoryStage}
-                      />
-                      <details className="story-technical-disclosure story-number-disclosure">
-                        <summary>
-                          <span>查看数值与当前 Gate</span>
-                          <small>{stepTitle(current)}</small>
-                        </summary>
-                        <div className="story-number-detail-content">
-                          <StateDetailContent
-                            current={current}
-                            currentState={currentState}
-                            phaseOnly={phaseOnly}
-                            teachingStep={teachingStep}
-                            hasTeaching={Boolean(result.teaching)}
-                          />
-                        </div>
-                      </details>
-                    </>
-                  ) : (
-                    <StateDetailContent
-                      current={current}
-                      currentState={currentState}
-                      phaseOnly={phaseOnly}
-                      teachingStep={teachingStep}
-                      hasTeaching={Boolean(result.teaching)}
-                    />
-                  )}
+                  <StateDetailContent
+                    current={current}
+                    currentState={currentState}
+                    phaseOnly={phaseOnly}
+                    teachingStep={teachingStep}
+                    hasTeaching={Boolean(result.teaching)}
+                  />
                 </>
               ) : (
                 <div className="panel-empty">当前没有可展示的量子状态。</div>

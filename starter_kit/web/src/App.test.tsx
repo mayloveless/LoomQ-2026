@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
+import { ConceptCard, CuratedWorkspace, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
 import { ExperimentStory } from './ExperimentStory'
 import type { ExperimentStoryModel } from './storyModel'
+import type { TraceEvent } from './types'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -99,7 +100,9 @@ describe('Task 13G Explorer entry', () => {
     expect(idleMarkup).not.toContain('class="loading-process"')
     expect(idleMarkup).not.toContain('skeleton-line')
     expect(loadingMarkup).toContain('class="loading-process"')
-    expect(loadingMarkup).toContain('skeleton-line')
+    expect(loadingMarkup).not.toContain('skeleton-line')
+    expect(loadingMarkup).toContain('正在准备你的量子实验')
+    expect(loadingMarkup).toContain('请求完成后会一次性展示真实结果')
   })
 })
 
@@ -115,8 +118,8 @@ describe('Task 13O curated experiment story frame', () => {
         action: '目标分支的振幅方向被翻过来；Oracle ≈ isTarget(x)，但不会直接返回答案。',
         importance: '概率还没有变大，方向差异会留给后续干涉使用。',
         terminology: '这也叫相位翻转。',
-        stepIndex: 8,
-        gateIndices: [3, 4, 5, 6, 7, 8],
+        stepIndex: 2,
+        gateIndices: [1, 2],
         before: { mode: 'wave', values: [
           { basis: '00', magnitude: 0.5, phase: 0, probability: 0.25 },
           { basis: '11', magnitude: 0.5, phase: 0, probability: 0.25 },
@@ -147,5 +150,55 @@ describe('Task 13O curated experiment story frame', () => {
     expect(markup).toContain('不会直接返回答案')
     expect(markup).toContain('方向翻转')
     expect(markup).toContain('不代表真实光子')
+    expect(markup).toContain('当前概念')
+    expect(markup).toContain('相位翻转')
+    expect(markup).toContain('Phase Flip')
+    expect(markup).toContain('上一阶段')
+    expect(markup).toContain('下一阶段')
+  })
+
+  it('renders the curated two-column Program and Story layout with range highlights', () => {
+    const steps: TraceEvent[] = [
+      {
+        seq: 0, layer: 'circuit', stage: 'initial_state', executor: 'local', status: 'ok', summary: '初始状态',
+        data: { state_after: [{ basis: '00', probability: 1 }] },
+      },
+      {
+        seq: 1, layer: 'circuit', stage: 'gate_step', executor: 'local', status: 'ok', summary: 'H',
+        data: { operation_index: 0, gate: 'h', qubits: ['q[0]'], state_before: [], state_after: [] },
+      },
+      {
+        seq: 2, layer: 'circuit', stage: 'gate_step', executor: 'local', status: 'ok', summary: 'Z',
+        data: { operation_index: 1, gate: 'z', qubits: ['q[0]'], state_before: [], state_after: [] },
+      },
+    ]
+    const markup = renderToStaticMarkup(
+      <CuratedWorkspace
+        story={model}
+        steps={steps}
+        qasm={'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[1];\nh q[0];\nz q[0];'}
+        circuitGoal="搜索目标 |11⟩"
+        activeStoryStage={0}
+        activeStep={2}
+        qasmOpen
+        guideOpen
+        onSelectStoryStage={() => undefined}
+        onSelectStep={() => undefined}
+        onQasmOpenChange={() => undefined}
+        onDismissGuide={() => undefined}
+        onOpenGuide={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('data-layout="curated-two-column"')
+    expect(markup).toContain('PROGRAM')
+    expect(markup).toContain('STORY')
+    expect(markup).toContain('class="circuit-diagram"')
+    expect(markup).toMatch(/<details[^>]*curated-qasm[^>]*open=""/)
+    expect(markup.match(/stage-highlighted/g)?.length).toBeGreaterThanOrEqual(4)
+    expect(markup).not.toContain('CIRCUIT STEPS')
+    expect(markup).not.toContain('自动回放')
+    expect(markup).not.toContain('查看这一阶段对应的 Gate')
+    expect(markup).toContain('先看右边：一次只解释一个阶段')
   })
 })

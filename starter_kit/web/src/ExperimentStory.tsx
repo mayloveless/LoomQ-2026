@@ -27,6 +27,47 @@ function effectLabel(
   return null
 }
 
+type StoryConcept = { name: string; english: string; explanation: string }
+
+function storyConceptFor(model: ExperimentStoryModel, stage: ExperimentStoryStage): StoryConcept | null {
+  const key = `${model.scenarioId}:${stage.id}`
+  const concepts: Record<string, StoryConcept> = {
+    'bell:branch': {
+      name: '叠加', english: 'Superposition',
+      explanation: '一个确定分支变成多个共同描述当前状态的分支。',
+    },
+    'bell:correlate': {
+      name: '纠缠', english: 'Entanglement',
+      explanation: '两个量子位现在必须作为一个联合状态理解，不能再分别描述。',
+    },
+    'bell:measure': {
+      name: '测量', english: 'Measurement',
+      explanation: '量子状态被读取为经典结果；重复运行后才能看到关联分布。',
+    },
+    'search:uniform': {
+      name: '叠加', english: 'Superposition',
+      explanation: '多个候选分支同时存在，并且此时拥有相同的振幅大小。',
+    },
+    'search:oracle': {
+      name: '相位翻转', english: 'Phase Flip',
+      explanation: '振幅大小没有改变，但目标分支与其他分支的方向关系反了。现在测量还看不出优势，后续干涉时才会显现。',
+    },
+    'search:diffusion': {
+      name: '干涉', english: 'Interference',
+      explanation: '不同方向的振幅重新组合，让目标分支增强、其他候选部分抵消。',
+    },
+    'search:measurement': {
+      name: '测量', english: 'Measurement',
+      explanation: '最终振幅优势在读取时转化成目标结果更高的出现概率。',
+    },
+    'phase:turn': {
+      name: '相对相位', english: 'Relative Phase',
+      explanation: '分支大小相同，但彼此的方向关系已经改变；这个差异会影响后续干涉。',
+    },
+  }
+  return concepts[key] ?? null
+}
+
 function StorySnapshotView({
   model,
   stage,
@@ -91,6 +132,7 @@ export function ExperimentStory({
 }) {
   const safeIndex = Math.min(model.stages.length - 1, Math.max(0, activeStageIndex))
   const stage = model.stages[safeIndex]
+  const concept = storyConceptFor(model, stage)
   const bases = [...new Set([...stage.before.values, ...stage.after.values].map((entry) => entry.basis))].sort()
 
   return (
@@ -114,10 +156,13 @@ export function ExperimentStory({
         <p>{stage.purpose}</p>
       </header>
 
-      <div className="story-visual-key" aria-label="教学示意图例">
-        <span>路径 = 分支</span>
-        <span>波形方向 = 相对相位</span>
-        <span>波形强弱 = 振幅</span>
+      <div className="story-visual-key" aria-label="如何理解这张示意图">
+        <b aria-hidden="true">!</b>
+        <div>
+          <strong>如何理解这张示意图</strong>
+          <p>路径代表分支 · 波形方向代表相对相位 · 波形强弱代表振幅</p>
+          <small>仅用于帮助理解量子状态，不代表真实光子路径。</small>
+        </div>
       </div>
 
       <div className="story-change-frame">
@@ -142,7 +187,18 @@ export function ExperimentStory({
         <strong>{stage.importance}</strong>
         {stage.terminology && <p>{stage.terminology}</p>}
       </footer>
-      <p className="story-schematic-note">路径和波形只用于解释量子分支、振幅与相对相位，不代表真实光子沿这些路径运动。</p>
+      {concept && (
+        <aside className="story-concept">
+          <span>💡 当前概念</span>
+          <strong>{concept.name} <small>{concept.english}</small></strong>
+          <p>{concept.explanation}</p>
+        </aside>
+      )}
+      <nav className="story-footer-navigation" aria-label="切换实验阶段">
+        <button onClick={() => onSelect(safeIndex - 1)} disabled={safeIndex === 0}>← 上一阶段</button>
+        <span>{safeIndex + 1} / {model.stages.length}</span>
+        <button onClick={() => onSelect(safeIndex + 1)} disabled={safeIndex >= model.stages.length - 1}>下一阶段 →</button>
+      </nav>
     </section>
   )
 }
