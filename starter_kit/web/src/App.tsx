@@ -12,15 +12,13 @@ import {
   circuitWarnings,
   executableLineIndex,
   extractQasm,
-  groverMechanismForScenario,
-  groverStageForStep,
   latestBackendIds,
   isPhaseOnlyChange,
   stateForStep,
   stepTitle,
-  type GroverMechanismModel,
-  type GroverStageId,
 } from './viewModel'
+import { ExperimentStory } from './ExperimentStory'
+import { buildExperimentStory } from './storyModel'
 import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
 import { AdvancedCapabilityScreen } from './AdvancedCapability'
@@ -36,6 +34,8 @@ const LOADING_STAGES = [
   '验证量子状态',
   '准备可视化解释',
 ]
+
+export const DEFAULT_RESULT_AUTOPLAY = false
 
 const AGENT_LABELS: Record<string, string> = {
   intent: '理解需求',
@@ -136,101 +136,6 @@ function ProbabilityComparison({ event }: { event: TraceEvent }) {
         )) : <code>{isPhaseOnlyChange(event) ? '概率未变 · 相位已变化' : '状态概率没有变化'}</code>}
       </div>
     </div>
-  )
-}
-
-const GROVER_STAGE_META: Record<GroverStageId, { number: string; label: string }> = {
-  uniform: { number: '01', label: '均匀叠加' },
-  oracle: { number: '02', label: 'Oracle 标记' },
-  diffusion: { number: '03', label: 'Diffusion 放大' },
-  measurement: { number: '04', label: '测量' },
-}
-
-export function GroverMechanism({
-  model,
-  activeStep,
-  onSelect,
-}: {
-  model: GroverMechanismModel | null
-  activeStep: number
-  onSelect: (stepIndex: number) => void
-}) {
-  if (!model) return null
-  const activeStage = groverStageForStep(model, activeStep)
-  const meta = GROVER_STAGE_META[activeStage.id]
-  const measurement = activeStage.id === 'measurement'
-
-  return (
-    <section className="grover-mechanism" aria-label="Grover 搜索机制">
-      <header>
-        <span>GROVER MECHANISM · 真实 Trace</span>
-        <strong>标记不是答案，干涉才把标记变成概率优势</strong>
-      </header>
-      <nav className="grover-stage-nav" aria-label="Grover 四个语义阶段">
-        {model.stages.map((stage) => {
-          const stageMeta = GROVER_STAGE_META[stage.id]
-          return (
-            <button
-              className={stage.id === activeStage.id ? 'active' : ''}
-              key={stage.id}
-              onClick={() => onSelect(stage.stepIndex)}
-            >
-              <span>{stageMeta.number}</span>
-              <strong>{stageMeta.label}</strong>
-            </button>
-          )
-        })}
-      </nav>
-
-      <div className={`grover-stage-visual stage-${activeStage.id}`}>
-        <div className="grover-stage-copy">
-          <span>{meta.number} · {meta.label}</span>
-          {activeStage.id === 'uniform' && (
-            <><strong>4 个候选先保持相同振幅</strong><p>这一步只准备候选，还没有偏向任何答案。</p></>
-          )}
-          {activeStage.id === 'oracle' && (
-            <>
-              <strong>Oracle ≈ <code>isTarget(x)</code></strong>
-              <p>Oracle 不直接返回答案，只给目标 <code>|11⟩</code> 做相位标记；此时四个候选的测量概率仍相同。</p>
-            </>
-          )}
-          {activeStage.id === 'diffusion' && (
-            <><strong>相位标记变成振幅优势</strong><p>Diffusion 围绕平均振幅做反射，通过干涉放大目标 <code>|11⟩</code>。</p></>
-          )}
-          {activeStage.id === 'measurement' && (
-            <><strong><code>|11⟩</code> 现在更容易出现</strong><p>最后才测量；这里展示真实的测量前概率，不伪造一次随机结果。</p></>
-          )}
-        </div>
-
-        {measurement ? (
-          <div className="grover-measurement-distribution">
-            <ProbabilityRows entries={activeStage.values} />
-          </div>
-        ) : (
-          <div className="grover-amplitude-chart" aria-label={`${meta.label}的相对振幅`}>
-            {activeStage.values.map((entry) => {
-              const amplitude = entry.amplitude ?? 0
-              const height = `${Math.min(100, Math.abs(amplitude) * 100)}%`
-              return (
-                <div className={`grover-amplitude-column${entry.basis === '11' ? ' target' : ''}`} key={entry.basis}>
-                  <div className="grover-amplitude-axis">
-                    <div className="grover-amplitude-half positive">
-                      {amplitude >= 0 && <i style={{ height }} />}
-                    </div>
-                    <div className="grover-amplitude-half negative">
-                      {amplitude < 0 && <i style={{ height }} />}
-                    </div>
-                  </div>
-                  <code>|{entry.basis}⟩</code>
-                  <small>{formatPercent(entry.probability)}</small>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-      <p className="grover-mechanism-note">中心线上方 / 下方表示相对相位方向；柱高表示真实振幅大小。</p>
-    </section>
   )
 }
 
@@ -676,6 +581,7 @@ export function ExplorerScreen({
   const [selectedScenarioId, setSelectedScenarioId] = useState<string | null>(initialScenario?.id ?? null)
   const [result, setResult] = useState<DebugResponse | null>(null)
   const [activeStep, setActiveStep] = useState(0)
+  const [activeStoryStage, setActiveStoryStage] = useState(0)
   const [autoPlaying, setAutoPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -694,13 +600,19 @@ export function ExplorerScreen({
     (event) => event.stage === 'backend_selected',
   )
   const selectedScenario = SCENARIOS.find((scenario) => scenario.id === selectedScenarioId)
-  const groverMechanism = useMemo(
-    () => groverMechanismForScenario(selectedScenarioId, steps),
+  const experimentStory = useMemo(
+    () => buildExperimentStory(selectedScenarioId, steps),
     [selectedScenarioId, steps],
   )
-  const currentGroverStage = groverMechanism
-    ? groverStageForStep(groverMechanism, activeStep)
-    : null
+  const currentStoryStage = experimentStory?.stages[activeStoryStage] ?? null
+
+  useEffect(() => {
+    if (!experimentStory) return
+    // 正式实验完成后停在第一个可解释阶段，不自动逐 Gate 播放。
+    setActiveStoryStage(0)
+    setActiveStep(experimentStory.stages[0].stepIndex)
+    setAutoPlaying(false)
+  }, [experimentStory])
 
   useEffect(() => {
     if (!autoPlaying || steps.length < 2) return
@@ -723,6 +635,7 @@ export function ExplorerScreen({
     setResult(null)
     setResultPrompt('')
     setActiveStep(0)
+    setActiveStoryStage(0)
     setAutoPlaying(false)
     setQasmOpen(false)
     setLoading(true)
@@ -738,7 +651,8 @@ export function ExplorerScreen({
       setResult(payload)
       setResultPrompt(requestPrompt)
       setActiveStep(0)
-      setAutoPlaying(true)
+      setActiveStoryStage(0)
+      setAutoPlaying(DEFAULT_RESULT_AUTOPLAY)
     } catch {
       setError('这次运行没有完成，请检查模型配置后重试。')
     } finally {
@@ -755,7 +669,21 @@ export function ExplorerScreen({
 
   function selectStep(index: number) {
     setAutoPlaying(false)
+    if (experimentStory) {
+      const directStage = experimentStory.stages.findIndex(
+        (stage) => stage.gateIndices.includes(index) || stage.stepIndex === index,
+      )
+      if (directStage >= 0) setActiveStoryStage(directStage)
+    }
     setActiveStep(index)
+  }
+
+  function selectStoryStage(index: number) {
+    if (!experimentStory) return
+    const nextIndex = Math.min(experimentStory.stages.length - 1, Math.max(0, index))
+    setAutoPlaying(false)
+    setActiveStoryStage(nextIndex)
+    setActiveStep(experimentStory.stages[nextIndex].stepIndex)
   }
 
   function toggleAutoPlayback() {
@@ -877,48 +805,117 @@ export function ExplorerScreen({
             <section className={`code-panel panel ${qasmOpen ? 'qasm-open' : ''}`}>
               {current ? (
                 <>
-                  <div className="current-operation">
+                  <div className={`current-operation${experimentStory ? ' story-current-operation' : ''}`}>
                     <div className="circuit-goal"><span>目标</span>{circuitGoal}</div>
-                    <div className="operation-copy">
-                      <div>
-                        <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
-                        <h2>{stepTitle(current)}</h2>
-                        {current.stage !== 'initial_state' && currentStatement && (
-                          <code className="current-statement">{currentStatement}</code>
-                        )}
-                      </div>
-                      <div className="purpose-copy">
-                        <span>为什么这里需要它？</span>
-                        <p>{currentPurpose}</p>
-                      </div>
-                    </div>
-                    <div className="operation-navigation" aria-label="电路执行控制">
-                      <button
-                        aria-label="上一步"
-                        onClick={() => selectStep(Math.max(0, activeStep - 1))}
-                        disabled={activeStep === 0}
-                      >
-                        <span>←</span> 上一步
-                      </button>
-                      <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
-                      <button
-                        className="primary-step"
-                        aria-label="下一步"
-                        onClick={() => selectStep(Math.min(steps.length - 1, activeStep + 1))}
-                        disabled={activeStep >= steps.length - 1}
-                      >
-                        下一步 <span>→</span>
-                      </button>
-                      <button
-                        className={`auto-step ${autoPlaying ? 'playing' : ''}`}
-                        aria-label={autoPlaying ? '暂停自动回放' : '开始自动回放'}
-                        onClick={toggleAutoPlayback}
-                      >
-                        {autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}
-                      </button>
-                    </div>
+                    {experimentStory && currentStoryStage ? (
+                      <>
+                        <div className="operation-copy story-operation-copy">
+                          <div>
+                            <span className="eyebrow">CURATED STORY · 阶段 {currentStoryStage.number}</span>
+                            <h2>{currentStoryStage.label}</h2>
+                          </div>
+                          <div className="purpose-copy">
+                            <span>当前阶段要做什么</span>
+                            <p>{currentStoryStage.purpose}</p>
+                          </div>
+                        </div>
+                        <div className="operation-navigation" aria-label="实验阶段控制">
+                          <button
+                            aria-label="上一阶段"
+                            onClick={() => selectStoryStage(activeStoryStage - 1)}
+                            disabled={activeStoryStage === 0}
+                          >
+                            <span>←</span> 上一阶段
+                          </button>
+                          <span className="operation-position">{activeStoryStage + 1} / {experimentStory.stages.length}</span>
+                          <button
+                            className="primary-step"
+                            aria-label="下一阶段"
+                            onClick={() => selectStoryStage(activeStoryStage + 1)}
+                            disabled={activeStoryStage >= experimentStory.stages.length - 1}
+                          >
+                            下一阶段 <span>→</span>
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="operation-copy">
+                          <div>
+                            <span className="eyebrow">执行步骤 · 第 {activeStep} / {Math.max(0, steps.length - 1)} 步</span>
+                            <h2>{stepTitle(current)}</h2>
+                            {current.stage !== 'initial_state' && currentStatement && (
+                              <code className="current-statement">{currentStatement}</code>
+                            )}
+                          </div>
+                          <div className="purpose-copy">
+                            <span>为什么这里需要它？</span>
+                            <p>{currentPurpose}</p>
+                          </div>
+                        </div>
+                        <div className="operation-navigation" aria-label="电路执行控制">
+                          <button
+                            aria-label="上一步"
+                            onClick={() => selectStep(Math.max(0, activeStep - 1))}
+                            disabled={activeStep === 0}
+                          >
+                            <span>←</span> 上一步
+                          </button>
+                          <span className="operation-position">{activeStep} / {Math.max(0, steps.length - 1)}</span>
+                          <button
+                            className="primary-step"
+                            aria-label="下一步"
+                            onClick={() => selectStep(Math.min(steps.length - 1, activeStep + 1))}
+                            disabled={activeStep >= steps.length - 1}
+                          >
+                            下一步 <span>→</span>
+                          </button>
+                          <button
+                            className={`auto-step ${autoPlaying ? 'playing' : ''}`}
+                            aria-label={autoPlaying ? '暂停自动回放' : '开始自动回放'}
+                            onClick={toggleAutoPlayback}
+                          >
+                            {autoPlaying ? 'Ⅱ 暂停' : activeStep >= steps.length - 1 ? '↺ 重播' : '▶ 自动'}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
+                  {experimentStory && currentStoryStage ? (
+                    <details className="story-technical-disclosure story-gate-disclosure">
+                      <summary>
+                        <span>查看这一阶段对应的 Gate</span>
+                        <small>{currentStoryStage.gateIndices.length
+                          ? `${currentStoryStage.gateIndices.length} 个步骤`
+                          : '没有额外 Gate'}</small>
+                      </summary>
+                      <div className="story-gate-list">
+                        {currentStoryStage.gateIndices.length ? (
+                          currentStoryStage.gateIndices.map((stepIndex) => (
+                            <button
+                              className={stepIndex === activeStep ? 'active' : ''}
+                              key={`${currentStoryStage.id}-${stepIndex}`}
+                              onClick={() => selectStep(stepIndex)}
+                            >
+                              <span>{String(stepIndex).padStart(2, '0')}</span>
+                              <strong>{stepTitle(steps[stepIndex])}</strong>
+                            </button>
+                          ))
+                        ) : <p>这一阶段用于观察真实状态，没有执行额外 Gate。</p>}
+                      </div>
+                    </details>
+                  ) : null}
+                  {experimentStory ? (
+                    <details className="story-technical-disclosure story-circuit-disclosure">
+                      <summary>
+                        <span>查看完整逐 Gate 电路</span>
+                        <small>{steps.length} 个步骤</small>
+                      </summary>
+                      <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
+                    </details>
+                  ) : (
+                    <CircuitDiagram steps={steps} activeStep={activeStep} onSelect={selectStep} />
+                  )}
                   <details
                     className="qasm-disclosure"
                     open={qasmOpen}
@@ -953,19 +950,23 @@ export function ExplorerScreen({
                 <>
                   <div className="state-heading">
                     <span className="eyebrow">量子状态变化</span>
-                    <span className="state-badge"><i /> {currentGroverStage
-                      ? GROVER_STAGE_META[currentGroverStage.id].label
+                    <span className="state-badge"><i /> {currentStoryStage
+                      ? currentStoryStage.label
                       : current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
                   </div>
-                  {groverMechanism ? (
+                  {experimentStory && currentStoryStage ? (
                     <>
-                      <GroverMechanism model={groverMechanism} activeStep={activeStep} onSelect={selectStep} />
-                      <details className="grover-gate-details">
+                      <ExperimentStory
+                        model={experimentStory}
+                        activeStageIndex={activeStoryStage}
+                        onSelect={selectStoryStage}
+                      />
+                      <details className="story-technical-disclosure story-number-disclosure">
                         <summary>
-                          <span>查看当前 Gate 的原始状态</span>
+                          <span>查看数值与当前 Gate</span>
                           <small>{stepTitle(current)}</small>
                         </summary>
-                        <div className="grover-gate-detail-content">
+                        <div className="story-number-detail-content">
                           <StateDetailContent
                             current={current}
                             currentState={currentState}

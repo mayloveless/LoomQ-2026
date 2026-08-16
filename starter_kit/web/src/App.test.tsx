@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { ConceptCard, EmptyWorkspace, ExplorerScreen, GroverMechanism, SCENARIOS, ScenarioContext } from './App'
-import type { GroverMechanismModel } from './viewModel'
+import { ConceptCard, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExplorerScreen, SCENARIOS, ScenarioContext } from './App'
+import { ExperimentStory } from './ExperimentStory'
+import type { ExperimentStoryModel } from './storyModel'
 
 describe('Just-in-time concept card', () => {
   it('renders a concept only when both name and explanation exist', () => {
@@ -102,55 +103,49 @@ describe('Task 13G Explorer entry', () => {
   })
 })
 
-describe('Task 13N Grover semantic visualization', () => {
-  const model: GroverMechanismModel = {
+describe('Task 13O curated experiment story frame', () => {
+  const model: ExperimentStoryModel = {
+    scenarioId: 'search',
     stages: [
-      { id: 'uniform', stepIndex: 2, values: [
-        { basis: '00', amplitude: 0.5, probability: 0.25 },
-        { basis: '01', amplitude: 0.5, probability: 0.25 },
-        { basis: '10', amplitude: 0.5, probability: 0.25 },
-        { basis: '11', amplitude: 0.5, probability: 0.25 },
-      ] },
-      { id: 'oracle', stepIndex: 8, values: [
-        { basis: '00', amplitude: 0.5, probability: 0.25 },
-        { basis: '01', amplitude: 0.5, probability: 0.25 },
-        { basis: '10', amplitude: 0.5, probability: 0.25 },
-        { basis: '11', amplitude: -0.5, probability: 0.25 },
-      ] },
-      { id: 'diffusion', stepIndex: 15, values: [
-        { basis: '00', amplitude: 0, probability: 0 },
-        { basis: '01', amplitude: 0, probability: 0 },
-        { basis: '10', amplitude: 0, probability: 0 },
-        { basis: '11', amplitude: 1, probability: 1 },
-      ] },
-      { id: 'measurement', stepIndex: 16, values: [
-        { basis: '00', amplitude: null, probability: 0 },
-        { basis: '01', amplitude: null, probability: 0 },
-        { basis: '10', amplitude: null, probability: 0 },
-        { basis: '11', amplitude: null, probability: 1 },
-      ] },
+      {
+        id: 'oracle',
+        number: '02',
+        label: '翻转目标方向',
+        purpose: '对每个候选执行同一个判断。',
+        action: '目标分支的振幅方向被翻过来；Oracle ≈ isTarget(x)，但不会直接返回答案。',
+        importance: '概率还没有变大，方向差异会留给后续干涉使用。',
+        terminology: '这也叫相位翻转。',
+        stepIndex: 8,
+        gateIndices: [3, 4, 5, 6, 7, 8],
+        before: { mode: 'wave', values: [
+          { basis: '00', magnitude: 0.5, phase: 0, probability: 0.25 },
+          { basis: '11', magnitude: 0.5, phase: 0, probability: 0.25 },
+        ] },
+        after: { mode: 'wave', values: [
+          { basis: '00', magnitude: 0.5, phase: 0, probability: 0.25 },
+          { basis: '11', magnitude: 0.5, phase: Math.PI, probability: 0.25 },
+        ] },
+      },
     ],
   }
 
-  it('explains Oracle marking and Diffusion without inventing an outcome', () => {
-    const oracleMarkup = renderToStaticMarkup(
-      <GroverMechanism model={model} activeStep={8} onSelect={() => undefined} />,
-    )
-    const diffusionMarkup = renderToStaticMarkup(
-      <GroverMechanism model={model} activeStep={15} onSelect={() => undefined} />,
-    )
-
-    expect(oracleMarkup).toContain('Oracle ≈ <code>isTarget(x)</code>')
-    expect(oracleMarkup).toContain('Oracle 不直接返回答案')
-    expect(oracleMarkup).toContain('测量概率仍相同')
-    expect(diffusionMarkup).toContain('Diffusion 围绕平均振幅做反射')
-    expect(diffusionMarkup).not.toContain('Oracle 是镜子')
-    expect(diffusionMarkup).not.toContain('单次测量结果')
+  it('keeps a completed request stopped until the user advances it', () => {
+    expect(DEFAULT_RESULT_AUTOPLAY).toBe(false)
   })
 
-  it('renders nothing when semantic recognition falls back', () => {
-    expect(renderToStaticMarkup(
-      <GroverMechanism model={null} activeStep={0} onSelect={() => undefined} />,
-    )).toBe('')
+  it('renders the five-part frame and explains Oracle as a direction flip first', () => {
+    const markup = renderToStaticMarkup(
+      <ExperimentStory model={model} activeStageIndex={0} onSelect={() => undefined} />,
+    )
+
+    expect(markup).toContain('当前阶段要做什么')
+    expect(markup).toContain('执行前')
+    expect(markup).toContain('做了什么')
+    expect(markup).toContain('执行后')
+    expect(markup).toContain('为什么重要')
+    expect(markup).toContain('振幅方向被翻过来')
+    expect(markup).toContain('不会直接返回答案')
+    expect(markup).toContain('方向翻转')
+    expect(markup).toContain('不代表真实光子')
   })
 })
