@@ -6,13 +6,18 @@ import { LearnScreen } from './Learn'
 const plainText = (markup: string) => markup.replace(/<[^>]*>/g, '')
 
 describe('Task 13J compact three-step Learn experience', () => {
-  it('keeps one compact Prepare, H, Measure experience after Why Quantum', () => {
+  it('folds Why Quantum into the landing before one compact Prepare, H, Measure experience', () => {
     const markup = renderToStaticMarkup(<App />)
     const text = plainText(markup)
 
     expect(text).toContain('让开发者先跨过量子计算的专业壁垒')
-    expect(text).toContain('量子计算不是“更快的电脑”')
+    expect(text).toContain('量子计算并不适合大多数程序，但在少数特殊问题上可能非常强：')
+    expect(text).toContain('密码学 · 搜索与组合 · 量子系统模拟')
+    expect(markup).toContain('href="#learn-quickstart"')
+    expect(markup).not.toContain('class="learn-why"')
+    expect(text).not.toContain('WHY QUANTUM MATTERS')
     expect(text).toContain('跟着一个量子比特，看懂量子程序怎么运行')
+    expect(text.indexOf('量子计算并不适合大多数程序')).toBeLessThan(text.indexOf('跟着一个量子比特'))
     expect(text).toContain('01Prepare准备 |0⟩')
     expect(text).toContain('02H产生叠加')
     expect(text).toContain('03Measure读取结果')
@@ -25,9 +30,9 @@ describe('Task 13J compact three-step Learn experience', () => {
     const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
     const text = plainText(markup)
 
-    expect(text).toContain('什么是量子电路？')
+    expect(text).toContain('什么是量子电路（Quantum Circuit）？')
     expect(text).toContain('按顺序执行的一组量子操作')
-    expect(text.indexOf('什么是量子电路？')).toBeLessThan(text.indexOf('01Prepare准备 |0⟩'))
+    expect(text.indexOf('什么是量子电路（Quantum Circuit）？')).toBeLessThan(text.indexOf('01Prepare准备 |0⟩'))
     expect(markup).toContain('aria-expanded="false"')
     expect(markup).toContain('id="learn-qasm-source"')
     expect(markup).toContain('hidden=""')

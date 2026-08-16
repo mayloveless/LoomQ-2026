@@ -148,10 +148,11 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         <div className="learn-landing-copy">
           <span className="learn-eyebrow">AI-NATIVE QUANTUM DEVELOPMENT</span>
           <h1>让开发者先跨过<br />量子计算的专业壁垒</h1>
-          <p>面向有编程基础、但没有量子专业背景的开发者。LoomQ 借助 AI 帮你生成、理解、验证和修复量子程序，并找到合适的运行平台。</p>
-          <small>不用先成为量子专家，也能完成自己的第一次量子实验。</small>
+          <p>面向有编程基础、但没有量子专业背景的开发者，不用先成为专家，也能从第一次实验开始。</p>
+          <p>LoomQ 借助 AI 帮你生成、理解、验证和修复量子程序，并找到合适的运行平台。</p>
+          <small>量子计算并不适合大多数程序，但在少数特殊问题上可能非常强：<span className="learn-landing-topics">密码学 · 搜索与组合 · 量子系统模拟</span></small>
           <div className="learn-landing-actions">
-            <a className="learn-primary learn-guide-link" href="#learn-why">30 秒看懂一个量子程序 <span>↓</span></a>
+            <a className="learn-primary learn-guide-link" href="#learn-quickstart">30 秒看懂一个量子程序 <span>↓</span></a>
             <button className="learn-landing-secondary" onClick={onStart}>直接选择实验 <span>→</span></button>
           </div>
         </div>
@@ -164,38 +165,6 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
           <i>↓ <em>SELECT</em></i>
           <span>BACKEND</span>
           <div><strong>找到合适的运行平台</strong><code>约束 · 推荐</code></div>
-        </div>
-      </section>
-
-      {/* 用三个短例子说明量子计算的适用边界，避免扩展成行业科普。 */}
-      <section className="learn-why" id="learn-why" aria-labelledby="learn-why-heading">
-        <div className="learn-why-heading">
-          <div>
-            <span>WHY QUANTUM MATTERS</span>
-            <h2 id="learn-why-heading">量子计算不是“更快的电脑”</h2>
-          </div>
-          <div>
-            <p>它并不适合大多数普通程序。量子计算真正有价值的地方，是少数具有特殊结构的问题：适用面很窄，但一旦命中，可能带来传统算法难以达到的优势。</p>
-            <strong>它不是让所有计算都更快，而是为少数经典计算很困难的问题提供新的求解方式。</strong>
-          </div>
-        </div>
-
-        <div className="learn-why-list">
-          <article className="learn-why-item learn-why-item-featured">
-            <span>01 · 与开发者最直接相关</span>
-            <h3>密码学</h3>
-            <p>Shor 算法会威胁 RSA、椭圆曲线等公钥密码体系，推动行业迁移到后量子密码。它改变的是软件基础设施的安全假设，不代表今天的量子电脑能破解所有密码。</p>
-          </article>
-          <article className="learn-why-item">
-            <span>02 · SEARCH / COMBINATION</span>
-            <h3>搜索 / 组合</h3>
-            <p>Grover 不是瞬间找到答案；它利用相位与干涉，让目标更容易被测到。后面的搜索实验会直接展示这个过程。</p>
-          </article>
-          <article className="learn-why-item">
-            <span>03 · QUANTUM SIMULATION</span>
-            <h3>模拟量子系统</h3>
-            <p>分子、材料等本身就是量子系统，量子计算机有机会更自然地模拟它们。</p>
-          </article>
         </div>
       </section>
 
