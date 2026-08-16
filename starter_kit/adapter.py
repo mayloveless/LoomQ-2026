@@ -7,11 +7,28 @@ the functions directly or delegate to another language/runtime with subprocess.
 
 from typing import Any, Dict, List, Tuple
 
-from loomq.parser import parse_qasm
-from loomq.l2_agent import agent_chat as _l2_agent_chat
-from loomq.l3 import compile_hybrid_source
-from loomq.runners import run_braket, run_originq, run_spinq
-from loomq.serializers import serialize_braket, serialize_originq, serialize_spinq
+if __package__:
+    # 从仓库根目录：import starter_kit.adapter
+    from .loomq.parser import parse_qasm
+    from .loomq.l2_agent import agent_chat as _l2_agent_chat
+    from .loomq.l3 import compile_hybrid_source
+    from .loomq.runners import run_braket, run_originq, run_spinq
+    from .loomq.serializers import (
+        serialize_braket,
+        serialize_originq,
+        serialize_spinq,
+    )
+else:
+    # 以 starter_kit 为评测根目录：import adapter
+    from loomq.parser import parse_qasm
+    from loomq.l2_agent import agent_chat as _l2_agent_chat
+    from loomq.l3 import compile_hybrid_source
+    from loomq.runners import run_braket, run_originq, run_spinq
+    from loomq.serializers import (
+        serialize_braket,
+        serialize_originq,
+        serialize_spinq,
+    )
 
 
 SUPPORTED_TARGETS = ("spinq", "originq", "braket")
