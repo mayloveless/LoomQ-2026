@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { TraceEvent } from './types'
-import { circuitSteps, executableLineIndex, isPhaseOnlyChange } from './viewModel'
+import {
+  circuitSteps,
+  executableLineIndex,
+  groverMechanismForScenario,
+  groverStageForStep,
+  isPhaseOnlyChange,
+  recognizeGroverMechanism,
+} from './viewModel'
 
 function gateEvent(overrides: Partial<TraceEvent['data']> = {}): TraceEvent {
   return {
@@ -52,5 +59,85 @@ describe('Task 13C presentation model', () => {
 
     expect(isPhaseOnlyChange(phaseEvent)).toBe(true)
     expect(isPhaseOnlyChange(gateEvent())).toBe(false)
+  })
+})
+
+const UNIFORM = [
+  { basis: '00', real: 0.5, imag: 0, probability: 0.25 },
+  { basis: '01', real: 0.5, imag: 0, probability: 0.25 },
+  { basis: '10', real: 0.5, imag: 0, probability: 0.25 },
+  { basis: '11', real: 0.5, imag: 0, probability: 0.25 },
+]
+
+function groverGate(seq: number, operationIndex: number, stateAfter: TraceEvent['data']['state_after']): TraceEvent {
+  return gateEvent({ operation_index: operationIndex, state_after: stateAfter, gate: 'x' }) as TraceEvent & { seq: number }
+}
+
+function canonicalGroverSteps(globalPhase = 1): TraceEvent[] {
+  const phase = (value: number) => value * globalPhase
+  const marked = UNIFORM.map((entry) => ({
+    ...entry,
+    real: phase(entry.basis === '11' ? -0.5 : 0.5),
+  }))
+  const amplified = [
+    { basis: '11', real: phase(1), imag: 0, probability: 1 },
+  ]
+  return [
+    { ...groverGate(2, 4, [{ basis: '00', real: 1, imag: 0, probability: 1 }]), seq: 2 },
+    { ...groverGate(8, 11, UNIFORM.map((entry) => ({ ...entry, real: phase(entry.real) }))), seq: 8 },
+    { ...groverGate(14, 27, marked), seq: 14 },
+    { ...groverGate(21, 43, amplified), seq: 21 },
+    {
+      seq: 29,
+      layer: 'circuit',
+      stage: 'measurement',
+      executor: 'local',
+      status: 'ok',
+      summary: 'measurement',
+      data: {
+        operation_index: 58,
+        probabilities_before: [{ basis: '11', probability: 1 }],
+        mappings: [],
+      },
+    },
+  ]
+}
+
+describe('Task 13N Grover semantic trace recognition', () => {
+  it('recognizes all four stages without relying on operation indexes', () => {
+    const model = recognizeGroverMechanism(canonicalGroverSteps())
+
+    expect(model?.stages.map((stage) => [stage.id, stage.stepIndex])).toEqual([
+      ['uniform', 1],
+      ['oracle', 2],
+      ['diffusion', 3],
+      ['measurement', 4],
+    ])
+    expect(groverStageForStep(model!, 0).id).toBe('uniform')
+    expect(groverStageForStep(model!, 2).id).toBe('oracle')
+    expect(groverStageForStep(model!, 3).id).toBe('diffusion')
+    expect(groverStageForStep(model!, 4).id).toBe('measurement')
+  })
+
+  it('recognizes the Oracle relative phase after a global phase flip', () => {
+    const model = recognizeGroverMechanism(canonicalGroverSteps(-1))
+    const oracle = model?.stages.find((stage) => stage.id === 'oracle')
+
+    expect(oracle?.values.find((entry) => entry.basis === '11')?.amplitude).toBeLessThan(0)
+    expect(oracle?.values.filter((entry) => entry.basis !== '11').every((entry) => (entry.amplitude ?? 0) > 0)).toBe(true)
+  })
+
+  it('falls back when any required semantic snapshot is missing', () => {
+    expect(recognizeGroverMechanism(canonicalGroverSteps().filter((_, index) => index !== 2))).toBeNull()
+    expect(recognizeGroverMechanism(canonicalGroverSteps().filter((_, index) => index !== 3))).toBeNull()
+    expect(recognizeGroverMechanism(canonicalGroverSteps().filter((_, index) => index !== 4))).toBeNull()
+  })
+
+  it('enables the mechanism only for search and leaves Bell and Phase unchanged', () => {
+    const steps = canonicalGroverSteps()
+
+    expect(groverMechanismForScenario('search', steps)).not.toBeNull()
+    expect(groverMechanismForScenario('bell', steps)).toBeNull()
+    expect(groverMechanismForScenario('phase', steps)).toBeNull()
   })
 })

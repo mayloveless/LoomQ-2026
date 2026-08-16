@@ -12,10 +12,14 @@ import {
   circuitWarnings,
   executableLineIndex,
   extractQasm,
+  groverMechanismForScenario,
+  groverStageForStep,
   latestBackendIds,
   isPhaseOnlyChange,
   stateForStep,
   stepTitle,
+  type GroverMechanismModel,
+  type GroverStageId,
 } from './viewModel'
 import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
@@ -132,6 +136,101 @@ function ProbabilityComparison({ event }: { event: TraceEvent }) {
         )) : <code>{isPhaseOnlyChange(event) ? '概率未变 · 相位已变化' : '状态概率没有变化'}</code>}
       </div>
     </div>
+  )
+}
+
+const GROVER_STAGE_META: Record<GroverStageId, { number: string; label: string }> = {
+  uniform: { number: '01', label: '均匀叠加' },
+  oracle: { number: '02', label: 'Oracle 标记' },
+  diffusion: { number: '03', label: 'Diffusion 放大' },
+  measurement: { number: '04', label: '测量' },
+}
+
+export function GroverMechanism({
+  model,
+  activeStep,
+  onSelect,
+}: {
+  model: GroverMechanismModel | null
+  activeStep: number
+  onSelect: (stepIndex: number) => void
+}) {
+  if (!model) return null
+  const activeStage = groverStageForStep(model, activeStep)
+  const meta = GROVER_STAGE_META[activeStage.id]
+  const measurement = activeStage.id === 'measurement'
+
+  return (
+    <section className="grover-mechanism" aria-label="Grover 搜索机制">
+      <header>
+        <span>GROVER MECHANISM · 真实 Trace</span>
+        <strong>标记不是答案，干涉才把标记变成概率优势</strong>
+      </header>
+      <nav className="grover-stage-nav" aria-label="Grover 四个语义阶段">
+        {model.stages.map((stage) => {
+          const stageMeta = GROVER_STAGE_META[stage.id]
+          return (
+            <button
+              className={stage.id === activeStage.id ? 'active' : ''}
+              key={stage.id}
+              onClick={() => onSelect(stage.stepIndex)}
+            >
+              <span>{stageMeta.number}</span>
+              <strong>{stageMeta.label}</strong>
+            </button>
+          )
+        })}
+      </nav>
+
+      <div className={`grover-stage-visual stage-${activeStage.id}`}>
+        <div className="grover-stage-copy">
+          <span>{meta.number} · {meta.label}</span>
+          {activeStage.id === 'uniform' && (
+            <><strong>4 个候选先保持相同振幅</strong><p>这一步只准备候选，还没有偏向任何答案。</p></>
+          )}
+          {activeStage.id === 'oracle' && (
+            <>
+              <strong>Oracle ≈ <code>isTarget(x)</code></strong>
+              <p>Oracle 不直接返回答案，只给目标 <code>|11⟩</code> 做相位标记；此时四个候选的测量概率仍相同。</p>
+            </>
+          )}
+          {activeStage.id === 'diffusion' && (
+            <><strong>相位标记变成振幅优势</strong><p>Diffusion 围绕平均振幅做反射，通过干涉放大目标 <code>|11⟩</code>。</p></>
+          )}
+          {activeStage.id === 'measurement' && (
+            <><strong><code>|11⟩</code> 现在更容易出现</strong><p>最后才测量；这里展示真实的测量前概率，不伪造一次随机结果。</p></>
+          )}
+        </div>
+
+        {measurement ? (
+          <div className="grover-measurement-distribution">
+            <ProbabilityRows entries={activeStage.values} />
+          </div>
+        ) : (
+          <div className="grover-amplitude-chart" aria-label={`${meta.label}的相对振幅`}>
+            {activeStage.values.map((entry) => {
+              const amplitude = entry.amplitude ?? 0
+              const height = `${Math.min(100, Math.abs(amplitude) * 100)}%`
+              return (
+                <div className={`grover-amplitude-column${entry.basis === '11' ? ' target' : ''}`} key={entry.basis}>
+                  <div className="grover-amplitude-axis">
+                    <div className="grover-amplitude-half positive">
+                      {amplitude >= 0 && <i style={{ height }} />}
+                    </div>
+                    <div className="grover-amplitude-half negative">
+                      {amplitude < 0 && <i style={{ height }} />}
+                    </div>
+                  </div>
+                  <code>|{entry.basis}⟩</code>
+                  <small>{formatPercent(entry.probability)}</small>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <p className="grover-mechanism-note">中心线上方 / 下方表示相对相位方向；柱高表示真实振幅大小。</p>
+    </section>
   )
 }
 
@@ -358,6 +457,61 @@ export function ConceptCard({ step }: { step?: TeachingStep }) {
   )
 }
 
+function StateDetailContent({
+  current,
+  currentState,
+  phaseOnly,
+  teachingStep,
+  hasTeaching,
+}: {
+  current: TraceEvent
+  currentState: StateEntry[]
+  phaseOnly: boolean
+  teachingStep?: TeachingStep
+  hasTeaching: boolean
+}) {
+  return (
+    <>
+      <div className="state-change-copy">
+        <span>发生了什么？</span>
+        <p>{String(current.data.gate_description ?? current.summary)}</p>
+      </div>
+      <div className="probability-section">
+        <div className="subheading">
+          <div><h3>{current.stage === 'measurement' ? '测量前概率' : '概率分布'}</h3><p>每个基态在测量时出现的可能性</p></div>
+          <span>{currentState.length} STATES</span>
+        </div>
+        <ProbabilityComparison event={current} />
+      </div>
+      {phaseOnly && (
+        <div className="phase-only-alert">
+          <strong>概率没有变化，但相位发生了变化。</strong>
+          <p>相位不会总是立刻体现在测量概率里，但会影响后续干涉。</p>
+        </div>
+      )}
+      <ConceptCard step={teachingStep} />
+      {current.stage === 'measurement' && (
+        <div className="measurement-card">
+          <span className="detail-label">QUANTUM → CLASSICAL</span>
+          {(current.data.mappings as MeasurementMapping[] | undefined)?.map((mapping) => (
+            <div className="mapping-row" key={`${mapping.qubit}-${mapping.classical_bit}`}>
+              <code>{mapping.qubit}</code><span>→</span><code>{mapping.classical_bit}</code>
+            </div>
+          ))}
+        </div>
+      )}
+      {current.stage !== 'initial_state' && (
+        <>
+          <TechnicalDetails event={current} state={currentState} />
+          {hasTeaching && (
+            <p className="teaching-disclaimer">教学解释由模型根据已验证电路生成，不参与正确性判断。</p>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
 function SidebarProcess({ events }: { events: TraceEvent[] }) {
   return (
     <details className="sidebar-process" open>
@@ -540,6 +694,13 @@ export function ExplorerScreen({
     (event) => event.stage === 'backend_selected',
   )
   const selectedScenario = SCENARIOS.find((scenario) => scenario.id === selectedScenarioId)
+  const groverMechanism = useMemo(
+    () => groverMechanismForScenario(selectedScenarioId, steps),
+    [selectedScenarioId, steps],
+  )
+  const currentGroverStage = groverMechanism
+    ? groverStageForStep(groverMechanism, activeStep)
+    : null
 
   useEffect(() => {
     if (!autoPlaying || steps.length < 2) return
@@ -792,43 +953,37 @@ export function ExplorerScreen({
                 <>
                   <div className="state-heading">
                     <span className="eyebrow">量子状态变化</span>
-                    <span className="state-badge"><i /> {current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
+                    <span className="state-badge"><i /> {currentGroverStage
+                      ? GROVER_STAGE_META[currentGroverStage.id].label
+                      : current.stage === 'initial_state' ? '初始化' : current.stage === 'measurement' ? '测量前' : '前后对比'}</span>
                   </div>
-                  <div className="state-change-copy">
-                    <span>发生了什么？</span>
-                    <p>{String(current.data.gate_description ?? current.summary)}</p>
-                  </div>
-                  <div className="probability-section">
-                    <div className="subheading">
-                      <div><h3>{current.stage === 'measurement' ? '测量前概率' : '概率分布'}</h3><p>每个基态在测量时出现的可能性</p></div>
-                      <span>{currentState.length} STATES</span>
-                    </div>
-                    <ProbabilityComparison event={current} />
-                  </div>
-                  {phaseOnly && (
-                    <div className="phase-only-alert">
-                      <strong>概率没有变化，但相位发生了变化。</strong>
-                      <p>相位不会总是立刻体现在测量概率里，但会影响后续干涉。</p>
-                    </div>
-                  )}
-                  <ConceptCard step={teachingStep} />
-                  {current.stage === 'measurement' && (
-                    <div className="measurement-card">
-                      <span className="detail-label">QUANTUM → CLASSICAL</span>
-                      {(current.data.mappings as MeasurementMapping[] | undefined)?.map((mapping) => (
-                        <div className="mapping-row" key={`${mapping.qubit}-${mapping.classical_bit}`}>
-                          <code>{mapping.qubit}</code><span>→</span><code>{mapping.classical_bit}</code>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {current.stage !== 'initial_state' && (
+                  {groverMechanism ? (
                     <>
-                      <TechnicalDetails event={current} state={currentState} />
-                      {result.teaching && (
-                        <p className="teaching-disclaimer">教学解释由模型根据已验证电路生成，不参与正确性判断。</p>
-                      )}
+                      <GroverMechanism model={groverMechanism} activeStep={activeStep} onSelect={selectStep} />
+                      <details className="grover-gate-details">
+                        <summary>
+                          <span>查看当前 Gate 的原始状态</span>
+                          <small>{stepTitle(current)}</small>
+                        </summary>
+                        <div className="grover-gate-detail-content">
+                          <StateDetailContent
+                            current={current}
+                            currentState={currentState}
+                            phaseOnly={phaseOnly}
+                            teachingStep={teachingStep}
+                            hasTeaching={Boolean(result.teaching)}
+                          />
+                        </div>
+                      </details>
                     </>
+                  ) : (
+                    <StateDetailContent
+                      current={current}
+                      currentState={currentState}
+                      phaseOnly={phaseOnly}
+                      teachingStep={teachingStep}
+                      hasTeaching={Boolean(result.teaching)}
+                    />
                   )}
                 </>
               ) : (
