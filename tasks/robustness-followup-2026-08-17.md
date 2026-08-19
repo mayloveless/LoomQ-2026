@@ -130,6 +130,42 @@ L3 编译器对嵌套 `if/else` 采用递归遍历。现阶段没有证据需要
 
 ---
 
+## 6. 运行参数的 Plain-language Explanation
+
+### 问题
+
+当前 Explorer 已经重点解释“量子程序这一步做了什么、状态如何变化”，但第一次运行实验的开发者还可能不理解本次执行参数本身，例如：
+
+- 为什么选择这个 backend；
+- `shots` 为什么需要重复很多次；
+- measured bits / 结果 bit string 应该怎么读；
+- 为什么有限次采样不会刚好等于理想概率。
+
+这些问题不需要扩大教学范围，也不应抢占 execution trace 的主视图；更适合成为运行结果附近的轻量上下文说明。
+
+### 建议形态
+
+优先考虑一个默认折叠的“这次实验怎么运行的”区域，仅解释本次真实参数：
+
+- `backend`：在哪里运行，以及本次选择的直接原因；
+- `shots`：重复测量次数，以及增加 shots 只会让采样分布更稳定，不会改变理想电路本身；
+- `measured bits`：经典位数量、bit string 顺序与本次结果标签如何读取；
+- `finite sample vs ideal`：明确区分有限采样波动、理想模拟分布和真机噪声，避免把随机偏差解释成程序错误。
+
+### 建议验收
+
+- 不新增独立教学流程，不要求用户先读完参数说明才能运行；
+- 默认信息保持短，技术细节按需展开；
+- 文案只解释从真实 execution result / deterministic metadata 可得出的事实，不让 LLM 猜测 backend、shots 或位序；
+- 如果已经有 ideal-vs-sampled 可视化，优先复用同一数据源而不是复制一套统计逻辑；
+- 在最终无作者参与的三条评委任务里观察：用户是否会对 backend、shots、bit order 产生明显困惑；没有真实困惑则可以不实现。
+
+### 优先级
+
+`P2 / P1-low`。与 Developer-first Explorer 的目标用户契合，但属于主观体验补强，不应打断当前客观评分与稳定性优化。第一波优化结束后再根据无作者体验验收决定是否落地。
+
+---
+
 ## 本轮明确不扩展
 
 暂不因为健壮性审计额外扩大 OpenQASM 门集，例如新增 `u2 / u3 / cu3 / ch` 等非当前正式目标门。除非后续官方契约或测试证明确有必要，否则优先保持 Parser / IR / Serializer 的稳定边界。
@@ -146,4 +182,5 @@ L3 编译器对嵌套 `if/else` 采用递归遍历。现阶段没有证据需要
 4. 修改 Parser / IR / codegen 后，重新跑 L1 target-native validation；
 5. 修改 L3 codegen / stress tests 后，重新跑随机程序 + 全测量注入 differential tests 与 step-budget 回归；
 6. 修改 L2 transport / failure handling 后，确认不改变调用预算，并用冻结 SHA 重跑最终 real-model benchmark；
-7. 最终提交前把 backend capability snapshot 与 upstream drift 检查纳入同一轮 preflight。
+7. 最终提交前把 backend capability snapshot 与 upstream drift 检查纳入同一轮 preflight；
+8. 运行参数解释只在无作者体验验收中确认存在真实理解阻塞时再实施，避免为了“更多教学”扩大默认 UI。
