@@ -1,8 +1,8 @@
 # LoomQ Robustness Follow-up
 
-> 独立记录本轮新发现的两个工程防线。
+> 独立记录第一波优化实施期间发现的后续工程防线。
 >
-> 当前已有其他任务在实施既有优化，本文件只用于暂存新增候选，避免修改正在被执行的 `tasks/optimization-backlog.md`。完成当前优化批次后，再统一判断是否吸收到正式 task。
+> 当前已有其他任务在实施既有优化，本文件只用于暂存新增候选，避免修改正在被执行的 `tasks/optimization-backlog.md`。完成当前优化批次后，再统一判断哪些已经被顺带覆盖、哪些需要吸收到正式 task。
 
 ## 1. OpenQASM 整寄存器门操作
 
@@ -65,15 +65,85 @@ L3 即使语义正确，也可能生成过长或控制流膨胀的汇编，最�
 
 ---
 
+## 3. L2 安全失败分类
+
+### 问题
+
+L2 当前会把模型调用异常统一改写为通用失败，这能避免凭证或底层请求内容泄漏，但也会丢失“配置错误 / 超时 / HTTP 错误 / 网络不可达 / 响应格式异常”等安全的故障类别。
+
+最终 real-model benchmark 如果只看到统一的 `model request failed`，会较难区分 Agent 逻辑失败与外部模型服务失败，影响最后阶段定位问题的效率。
+
+### 建议验收
+
+- 不保留原始异常文本和异常链，不让 API Key、Authorization header、URL 查询参数等进入 trace / benchmark；
+- 只映射到有限、稳定的安全类别，例如：`config`、`timeout`、`http_4xx`、`http_5xx`、`network`、`invalid_response`、`unknown`；
+- benchmark / trace 只记录类别和必要的非敏感状态，不记录 response body；
+- 不因此改变正式 Agent 重试次数、调用预算或返回协议。
+
+### 优先级
+
+`P2`。主要提升最终 benchmark 与线上故障诊断能力，不直接提高客观正确率；等第一波 P0/P1 优化完成后再决定是否实现。
+
+---
+
+## 4. Final Preflight 显式校验 Backend Capability Snapshot
+
+### 问题
+
+L2 后端选择以仓库内 `backend_capabilities.json` 为事实源。最终提交前虽然已有 upstream / contract drift 检查，但应显式把能力表也纳入冻结前核对，避免官方快照更新而本地继续使用旧版本。
+
+运行时不应硬编码某个版本号，否则官方正常更新会让程序自行拒绝合法输入；该检查属于最终提交 preflight，而不是生产路径。
+
+### 建议验收
+
+- 最终冻结前比较本地与最新 upstream 的 `backend_capabilities.json`；
+- 至少核对 `version` 与文件内容 / blob hash，不能只检查文件是否存在；
+- 若发生漂移，先审阅字段与语义变化，再决定是否更新 selector / tests；
+- 更新能力表后重跑 backend-selection hidden-like / adversarial cases；
+- 把检查结果记录进 final preflight / release verification，不增加运行时网络依赖。
+
+### 优先级
+
+`P1`。实现成本很低，直接影响 L2 backend hidden case 的事实基准；建议第一波优化完成后纳入最终提交检查清单。
+
+---
+
+## 5. L3 编译期嵌套 / 递归压力测试
+
+### 问题
+
+L3 编译器对嵌套 `if/else` 采用递归遍历。现阶段没有证据需要人为限制合法文法的嵌套深度，因此不建议在 production parser/compiler 中擅自加入固定 `max_nesting_depth`。
+
+更合适的做法是把较深嵌套加入压力测试，同时观察编译期递归、生成汇编规模与最终 emulator 执行步数，防止 hidden case 在资源边界上失败。
+
+### 建议验收
+
+- fuzz / differential 中增加较深但合法的嵌套 `if/else` case；
+- 验证 parser/compiler 不出现 `RecursionError` 或异常的编译时间增长；
+- 同时记录生成指令规模与实际 execution step，和第 2 项的 step-budget 一起看；
+- 若发现真实边界问题，优先优化遍历 / codegen，而不是先定义赛题未规定的任意深度上限；
+- 保持与独立 reference interpreter 的最终寄存器状态一致。
+
+### 优先级
+
+`P1`（低成本补充）。与第 2 项一起实施最合适，不单独提前打开 L3 production code。
+
+---
+
 ## 本轮明确不扩展
 
 暂不因为健壮性审计额外扩大 OpenQASM 门集，例如新增 `u2 / u3 / cu3 / ch` 等非当前正式目标门。除非后续官方契约或测试证明确有必要，否则优先保持 Parser / IR / Serializer 的稳定边界。
 
+同样暂不因为维护性建议重构 Prompt 文件结构、引入额外 schema 框架、增加模型调用次数，或为了理论上的通用性扩大当前正式语法范围。第一波优化完成前，优先保护已经稳定的客观评分路径。
+
 ## 后续处理
 
-当前优化批次完成后：
+第一波优化完成后统一复核：
 
-1. 对照届时代码确认这两项是否已经被其他 task 顺带覆盖；
-2. 未覆盖的项再拆成最小正式 task；
-3. 修改 Parser / IR / codegen 后，重新跑 L1 target-native validation；
-4. 修改 L3 codegen 后，重新跑随机程序 + 全测量注入 differential tests 与 step-budget 回归。
+1. 对照届时代码确认以上候选哪些已经被其他 task 顺带覆盖；
+2. 按优先级和剩余时间重新排序，只保留仍对应真实评分 / 提交风险的项；
+3. 未覆盖且仍高价值的项再拆成最小正式 task，不直接整包实施；
+4. 修改 Parser / IR / codegen 后，重新跑 L1 target-native validation；
+5. 修改 L3 codegen / stress tests 后，重新跑随机程序 + 全测量注入 differential tests 与 step-budget 回归；
+6. 修改 L2 transport / failure handling 后，确认不改变调用预算，并用冻结 SHA 重跑最终 real-model benchmark；
+7. 最终提交前把 backend capability snapshot 与 upstream drift 检查纳入同一轮 preflight。
