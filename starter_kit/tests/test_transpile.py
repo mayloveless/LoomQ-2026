@@ -54,7 +54,6 @@ class SerializerTests(unittest.TestCase):
 
         expected_lines = {
             "OPENQASM 3.0;",
-            'include "stdgates.inc";',
             "qubit[2] data;",
             "bit[2] result;",
             "h data[0];",
@@ -63,17 +62,17 @@ class SerializerTests(unittest.TestCase):
         }
         self.assertTrue(expected_lines.issubset(set(output.splitlines())))
 
-    def test_braket_can_omit_stdgates_without_changing_program_body(self) -> None:
+    def test_braket_can_include_stdgates_without_changing_program_body(self) -> None:
         circuit = parse_qasm(CUSTOM_QASM)
         default_output = serialize_braket(circuit)
-        local_simulator_output = serialize_braket(circuit, include_stdgates=False)
+        with_include = serialize_braket(circuit, include_stdgates=True)
 
-        self.assertIn('include "stdgates.inc";', default_output)
-        self.assertNotIn('include "stdgates.inc";', local_simulator_output)
+        self.assertNotIn('include "stdgates.inc";', default_output)
+        self.assertIn('include "stdgates.inc";', with_include)
         # 除 include 外，寄存器、门和测量语句必须保持完全一致。
         self.assertEqual(
-            [line for line in default_output.splitlines() if "stdgates.inc" not in line],
-            local_simulator_output.splitlines(),
+            default_output.splitlines(),
+            [line for line in with_include.splitlines() if "stdgates.inc" not in line],
         )
 
     def test_braket_single_bit_measurement(self) -> None:
@@ -95,7 +94,10 @@ class SerializerTests(unittest.TestCase):
         output = serialize_braket(parse_qasm(FULL_GATE_QASM))
 
         self.assertIn("cnot q[0], q[1];", output)
-        self.assertIn("cp(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), output)
+        self.assertIn(
+            "cphaseshift(%s) q[0], q[1];" % format(math.pi / 8, ".17g"),
+            output,
+        )
         self.assertNotIn("cu1(", output)
 
     def test_braket_preserves_other_gate_names_and_parameters(self) -> None:
@@ -105,7 +107,9 @@ class SerializerTests(unittest.TestCase):
         self.assertIn("ry(%s) q[0];" % format(math.pi / 2, ".17g"), lines)
         self.assertIn("rz(%s) q[1];" % format(-math.pi / 4, ".17g"), lines)
         self.assertIn("swap q[0], q[1];", lines)
-        self.assertIn("ccx q[0], q[1], q[2];", lines)
+        self.assertIn("si q[0];", lines)
+        self.assertIn("ti q[0];", lines)
+        self.assertIn("ccnot q[0], q[1], q[2];", lines)
 
     def test_braket_execution_mode_uses_local_simulator_compatible_gates(self) -> None:
         output = serialize_braket(
@@ -123,7 +127,10 @@ class SerializerTests(unittest.TestCase):
         braket = adapter.transpile(FULL_GATE_QASM, "braket")
 
         self.assertEqual(parse_qasm(FULL_GATE_QASM), parse_qasm(spinq))
-        self.assertIn("cp(%s) q[0], q[1];" % format(math.pi / 8, ".17g"), braket)
+        self.assertIn(
+            "cphaseshift(%s) q[0], q[1];" % format(math.pi / 8, ".17g"),
+            braket,
+        )
 
 
 class AdapterTests(unittest.TestCase):
@@ -133,7 +140,7 @@ class AdapterTests(unittest.TestCase):
 
         self.assertTrue(spinq.startswith("OPENQASM 2.0;"))
         self.assertTrue(braket.startswith("OPENQASM 3.0;"))
-        self.assertIn('include "stdgates.inc";', braket)
+        self.assertNotIn('include "stdgates.inc";', braket)
         self.assertIn("cnot data[0], data[1];", braket)
 
     def test_originq_target_is_supported(self) -> None:

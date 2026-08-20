@@ -11,8 +11,15 @@ from ..ir import (
 )
 
 
-# OpenQASM 3 stdgates 使用 cnot 和 cp 表达 QASM 2 的 cx 与 cu1。
-_GATE_NAMES = {"cx": "cnot", "cu1": "cp"}
+# pinned Braket LocalSimulator 直接识别这些 vendor-native 门名；公开 artifact
+# 不依赖运行目录中不存在的 stdgates.inc 文件。
+_GATE_NAMES = {
+    "sdg": "si",
+    "tdg": "ti",
+    "cx": "cnot",
+    "cu1": "cphaseshift",
+    "ccx": "ccnot",
+}
 
 
 def _qubit(reference: QubitRef) -> str:
@@ -69,11 +76,11 @@ def _gate_lines(operation: GateOperation, *, execution_mode: bool) -> List[str]:
 
 
 def serialize_braket(
-    circuit: Circuit, *, include_stdgates: bool = True, execution_mode: bool = False
+    circuit: Circuit, *, include_stdgates: bool = False, execution_mode: bool = False
 ) -> str:
     """Return a complete Braket OpenQASM 3 program.
 
-    ``transpile()`` 的目标 IR 默认保留 stdgates 声明；本地模拟器提交时可关闭。
+    ``transpile()`` 默认输出可直接提交给 pinned Braket SDK 的完整程序。
     """
     lines: List[str] = ["OPENQASM 3.0;"]
     if include_stdgates:
