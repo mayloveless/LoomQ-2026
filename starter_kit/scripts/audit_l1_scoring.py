@@ -20,6 +20,8 @@ if str(STARTER_KIT_ROOT) not in sys.path:
 
 import adapter
 from evaluator import calculate_hellinger_fidelity, validate_schema
+from loomq.parser import parse_qasm
+from loomq.serializers.braket import serialize_braket
 from scripts.l1_native import execute_native_artifact, normalized_native_counts
 from tests.test_l1_hidden_like import (
     RANDOM_SEEDS,
@@ -214,14 +216,25 @@ def _run_case(case: AuditCase, target: str, shots: int) -> Dict[str, Any]:
 
 def _run_native_case(case: AuditCase, target: str, shots: int) -> Dict[str, Any]:
     started = time.perf_counter()
+    path = "transpile_native"
     try:
-        artifact = adapter.transpile(case.source, target)
+        if target == "braket":
+            # pinned LocalSimulator 无法直接解析比赛 canonical stdgates artifact；
+            # 此路径只审计 Runner 使用的 SDK 兼容方言。
+            artifact = serialize_braket(
+                parse_qasm(case.source),
+                include_stdgates=False,
+                execution_mode=True,
+            )
+            path = "execution_mode_sdk"
+        else:
+            artifact = adapter.transpile(case.source, target)
         payload = execute_native_artifact(target, artifact, shots)
         counts = normalized_native_counts(payload, shots)
         return _score_entry(
             case,
             target,
-            "transpile_native",
+            path,
             shots,
             counts,
             time.perf_counter() - started,
@@ -232,7 +245,7 @@ def _run_native_case(case: AuditCase, target: str, shots: int) -> Dict[str, Any]
             "source_sha": _source_sha(case.source),
             "case_id": case.case_id,
             "target": target,
-            "path": "transpile_native",
+            "path": path,
             "shots": shots,
             "fidelity": None,
             "deterministic_probability": None,
@@ -290,11 +303,12 @@ def main() -> int:
                 if native_entry.get("sdk_version"):
                     versions[target] = native_entry["sdk_version"]
                 print(
-                    "[%s] %s %s transpile_native %.3fs"
+                    "[%s] %s %s %s %.3fs"
                     % (
                         native_entry["status"],
                         target,
                         case.case_id,
+                        native_entry["path"],
                         native_entry["elapsed_seconds"],
                     )
                 )
@@ -314,6 +328,15 @@ def main() -> int:
         "shots": args.shots,
         "fidelity_threshold": FIDELITY_THRESHOLD,
         "capabilities": capabilities,
+        "validation_boundaries": {
+            "spinq": "public QASM2 via SpinQit QASM compiler",
+            "originq": "public OriginIR via pyQPanda converter and CPUQVM",
+            "braket": (
+                "canonical public OQ3 is contract-shape validated; SDK semantics "
+                "use execution_mode_sdk because pinned LocalSimulator has a "
+                "stdgates parser dialect difference"
+            ),
+        },
         "summary": {
             "passed": passed,
             "failed": failed,

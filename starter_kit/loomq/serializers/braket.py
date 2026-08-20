@@ -11,15 +11,8 @@ from ..ir import (
 )
 
 
-# pinned Braket LocalSimulator 直接识别这些 vendor-native 门名；公开 artifact
-# 不依赖运行目录中不存在的 stdgates.inc 文件。
-_GATE_NAMES = {
-    "sdg": "si",
-    "tdg": "ti",
-    "cx": "cnot",
-    "cu1": "cphaseshift",
-    "ccx": "ccnot",
-}
+# public transpile 严格使用比赛契约的 canonical OpenQASM 3 门名。
+_PUBLIC_GATE_NAMES = {"cx": "cnot", "cu1": "cp"}
 
 
 def _qubit(reference: QubitRef) -> str:
@@ -40,7 +33,7 @@ def _gate_lines(operation: GateOperation, *, execution_mode: bool) -> List[str]:
         )
 
     if not execution_mode:
-        gate_name = _GATE_NAMES.get(operation.name, operation.name)
+        gate_name = _PUBLIC_GATE_NAMES.get(operation.name, operation.name)
         return ["%s%s %s;" % (gate_name, parameters, qubits)]
 
     # braket_sv 的无 include 执行程序没有 sdg、tdg、cp 与 ccx 定义。
@@ -71,16 +64,16 @@ def _gate_lines(operation: GateOperation, *, execution_mode: bool) -> List[str]:
             "cnot %s, %s;" % (control_a, control_b),
         ]
 
-    gate_name = _GATE_NAMES.get(operation.name, operation.name)
+    gate_name = "cnot" if operation.name == "cx" else operation.name
     return ["%s%s %s;" % (gate_name, parameters, qubits)]
 
 
 def serialize_braket(
-    circuit: Circuit, *, include_stdgates: bool = False, execution_mode: bool = False
+    circuit: Circuit, *, include_stdgates: bool = True, execution_mode: bool = False
 ) -> str:
     """Return a complete Braket OpenQASM 3 program.
 
-    ``transpile()`` 默认输出可直接提交给 pinned Braket SDK 的完整程序。
+    默认 public 模式遵守 target_ir_contract.md；Runner 可显式启用 SDK 兼容模式。
     """
     lines: List[str] = ["OPENQASM 3.0;"]
     if include_stdgates:

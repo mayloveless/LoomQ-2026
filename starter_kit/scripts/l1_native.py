@@ -1,4 +1,4 @@
-"""三平台公开 target-native artifact 的独立执行入口。"""
+"""三平台厂商 artifact 的独立 SDK 执行入口。"""
 
 import importlib
 import importlib.metadata
@@ -22,7 +22,7 @@ def _package_version(distribution: str) -> str:
 
 
 def _execute_braket(artifact: str, shots: int) -> Dict[str, Any]:
-    """把公开 OQ3 原文直接交给 Braket Program 与 LocalSimulator。"""
+    """把调用方提供的 OQ3 交给 Braket Program 与 LocalSimulator。"""
     devices = importlib.import_module("braket.devices")
     openqasm = importlib.import_module("braket.ir.openqasm")
     program = openqasm.Program(source=artifact)
@@ -126,7 +126,7 @@ def _execute_isolated(
 def execute_native_artifact(
     target: str, artifact: str, shots: int
 ) -> Dict[str, Any]:
-    """执行 adapter.transpile() 原文，不回到 LoomQ Parser/Serializer。"""
+    """执行调用方提供的厂商 artifact；具体独立性边界由调用方记录。"""
     validate_shots(shots)
     if not isinstance(artifact, str) or not artifact.strip():
         raise ValueError("native artifact must be a non-empty string")
