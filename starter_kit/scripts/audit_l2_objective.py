@@ -21,11 +21,10 @@ STARTER_KIT_ROOT = Path(__file__).resolve().parents[1]
 if str(STARTER_KIT_ROOT) not in sys.path:
     sys.path.insert(0, str(STARTER_KIT_ROOT))
 
+import adapter
 import llm_client
-from loomq.backend_selector import BackendConstraints, select_backends
-from loomq.debug_trace import TraceEvent, TraceRecorder
+from loomq.backend_selector import BackendConstraints, load_backends, select_backends
 from loomq.ir import MeasureOperation
-from loomq.l2_agent import _run_agent
 from loomq.parser import parse_qasm
 from loomq.qasm_tools import extract_qasm
 from loomq.semantic_verifier import (
@@ -278,13 +277,6 @@ def _base_entry(
     }
 
 
-def _trace_event(events: Sequence[TraceEvent], stage: str) -> TraceEvent | None:
-    for event in reversed(events):
-        if event.stage == stage:
-            return event
-    return None
-
-
 def _error_category(error: Exception) -> str:
     """只返回安全高层分类，不保留原异常或 HTTP 内容。"""
     message = str(error)
@@ -318,8 +310,8 @@ def _run_real_case(
     model: str,
 ) -> dict[str, Any]:
     entry = _base_entry(case, repository, model)
-    recorder = TraceRecorder()
     call_count = 0
+    reply: str | None = None
     original_chat_completion = llm_client.chat_completion
 
     def counted_chat_completion(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -330,19 +322,15 @@ def _run_real_case(
     started = time.monotonic()
     llm_client.chat_completion = counted_chat_completion
     try:
-        reply = _run_agent(case.prompt, recorder)
-        result_event = _trace_event(recorder.events, "agent_result")
-        entry["repair_triggered"] = bool(
-            result_event is not None and result_event.data.get("repaired", False)
-        )
+        # 严格经过官方入口；模型 transport 只计数，不替换、不 mock。
+        reply = adapter.agent_chat(case.prompt)
 
         if case.task_type == "select_backend":
-            selected_event = _trace_event(recorder.events, "backend_selected")
-            observed_ids = (
-                list(selected_event.data.get("backend_ids", []))
-                if selected_event is not None
-                else []
-            )
+            observed_ids = [
+                backend.id
+                for backend in load_backends()
+                if "`%s`" % backend.id in reply
+            ]
             assert case.expected_backend_constraints is not None
             expected_ids = [
                 backend.id
@@ -355,6 +343,7 @@ def _run_real_case(
                 entry["error_category"] = "backend_selection_mismatch"
         else:
             qasm = extract_qasm(reply)
+            entry["parser_valid"] = False
             if qasm is None:
                 raise RuntimeError("final reply has no unambiguous OpenQASM")
             circuit = parse_qasm(qasm)
@@ -386,6 +375,9 @@ def _run_real_case(
     finally:
         llm_client.chat_completion = original_chat_completion
         entry["llm_calls"] = call_count
+        entry["repair_triggered"] = (
+            call_count == 3 if case.task_type != "select_backend" else False
+        )
         entry["elapsed_seconds"] = round(time.monotonic() - started, 6)
 
     if call_count > 3:
@@ -394,6 +386,9 @@ def _run_real_case(
     if entry["elapsed_seconds"] >= 120.0:
         entry["status"] = "FAIL"
         entry["error_category"] = "case_time_limit_exceeded"
+    if entry["status"] == "FAIL" and reply is not None:
+        # 仅保留 adapter 最终文本，绝不记录原始 HTTP response 或请求头。
+        entry["model_output"] = reply
     return entry
 
 
