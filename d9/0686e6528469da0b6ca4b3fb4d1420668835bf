@@ -1,0 +1,28 @@
+starter_kit/loomq/serializers/braket.py
+  h_26db57e01d6006 14-22,79,83
+starter_kit/scripts/__init__.py
+  h_26db57e01d6006 1
+starter_kit/scripts/audit_l1_scoring.py
+  h_26db57e01d6006 1-343
+starter_kit/scripts/l1_native.py
+  h_26db57e01d6006 1-137
+starter_kit/scripts/l1_native_worker.py
+  h_26db57e01d6006 1-114
+starter_kit/tests/test_l1_hidden_like.py
+  h_26db57e01d6006 1,63,75-83,211-298,331-335,337,339,341-346,356,363-365,375,377-378,384,386,389,392,394-399,404,407-408,410,424-453,455-459
+starter_kit/tests/test_l1_native_audit.py
+  h_26db57e01d6006 1-154
+starter_kit/tests/test_transpile.py
+  h_26db57e01d6006 65,68,70-71,74-75,97-100,110-112,130-133,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d90686e6528469da0b6ca4b3fb4d1420668835bf",
+  "prompts": {},
+  "humans": {
+    "h_26db57e01d6006": {
+      "author": "wanglingfei <1418461+mayloveless@users.noreply.github.com>"
+    }
+  }
+}
