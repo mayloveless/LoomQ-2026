@@ -790,8 +790,10 @@ code, kbd { font-family: var(--mono); }
 /* Learn 是独立的新手 screen，只复用 Explorer 的深色语言。 */
 .learn-shell { min-height: 100vh; color: var(--text); background: radial-gradient(circle at 72% 8%, rgba(88,201,216,.09), transparent 25%), radial-gradient(circle at 18% 42%, rgba(168,138,224,.06), transparent 24%), var(--bg); }
 .learn-landing { max-width: 1200px; min-height: calc(100vh - 62px); display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(390px, .92fr); align-items: center; gap: 74px; margin: 0 auto; padding: 70px 34px 76px; }
-.learn-landing-copy h1 { margin: 17px 0 20px; color: #f0f3f6; font-size: clamp(42px, 4.6vw, 64px); line-height: 1.1; letter-spacing: -.05em; }
+.learn-landing-copy h1 { margin: 17px 0 20px; color: #f0f3f6; font-size: clamp(42px, 4.2vw, 58px); line-height: 1.1; letter-spacing: -.05em; }
 .learn-landing-copy > p { max-width: 690px; margin: 0; color: #9aa5b0; font-size: 17px; line-height: 1.78; }
+/* 两段首屏说明分别承载 Why Quantum 与产品定位。 */
+.learn-landing-copy > p + p { margin-top: 10px; }
 .learn-landing-copy > small { display: block; margin-top: 15px; color: var(--text); font-size: 14px; font-weight: 550; }
 .learn-landing-actions { display: flex; align-items: center; gap: 15px; margin-top: 29px; }
 .learn-landing-actions .learn-primary { margin-top: 0; }

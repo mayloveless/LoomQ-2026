@@ -6,11 +6,16 @@ import { LearnScreen } from './Learn'
 const plainText = (markup: string) => markup.replace(/<[^>]*>/g, '')
 
 describe('Task 13J compact three-step Learn experience', () => {
-  it('keeps the landing focused on LoomQ before one compact Prepare, H, Measure experience', () => {
+  it('positions why quantum, who LoomQ serves, and how it helps before the compact experience', () => {
     const markup = renderToStaticMarkup(<App />)
     const text = plainText(markup)
 
-    expect(text).toContain('让开发者先跨过量子计算的专业壁垒')
+    expect(text).toContain('从熟悉的编程方式开始理解量子计算')
+    expect(text).toContain('一种面向特定问题的新计算方式')
+    expect(text).toContain('LoomQ 帮助开发者从熟悉的编程方式出发')
+    expect(text).toContain('探索、生成并验证量子程序')
+    expect(text).not.toContain('量子计算是更快的普通电脑')
+    expect(text).not.toContain('解决所有问题')
     expect(text).not.toContain('量子计算并不适合大多数程序')
     expect(text).not.toContain('密码学 · 搜索与组合 · 量子系统模拟')
     expect(markup).toContain('href="#learn-quickstart"')

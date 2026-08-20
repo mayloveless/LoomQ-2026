@@ -146,10 +146,10 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
 
       <section className="learn-landing">
         <div className="learn-landing-copy">
-          <span className="learn-eyebrow">AI-NATIVE QUANTUM DEVELOPMENT</span>
-          <h1>让开发者先跨过<br />量子计算的专业壁垒</h1>
-          <p>面向有编程基础、但没有量子专业背景的开发者，不用先成为专家，也能从第一次实验开始。</p>
-          <p>LoomQ 借助 AI 帮你生成、理解、验证和修复量子程序，并找到合适的运行平台。</p>
+          <span className="learn-eyebrow">QUANTUM COMPUTING · FOR DEVELOPERS</span>
+          <h1>从熟悉的编程方式开始<br />理解量子计算</h1>
+          <p>量子计算不是更快的普通电脑，而是一种面向特定问题的新计算方式。</p>
+          <p>LoomQ 帮助开发者从熟悉的编程方式出发，探索、生成并验证量子程序。</p>
           <div className="learn-landing-actions">
             <a className="learn-primary learn-guide-link" href="#learn-quickstart">30 秒看懂一个量子程序 <span>↓</span></a>
             <button className="learn-landing-secondary" onClick={onStart}>直接选择实验 <span>→</span></button>
