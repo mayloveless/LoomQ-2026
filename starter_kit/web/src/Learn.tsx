@@ -149,7 +149,7 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
           <span className="learn-eyebrow">QUANTUM COMPUTING · FOR DEVELOPERS</span>
           <h1>从熟悉的编程方式开始<br />理解量子计算</h1>
           <p>量子计算不是更快的普通电脑，而是一种面向特定问题的新计算方式。</p>
-          <p>LoomQ 帮助开发者从熟悉的编程方式出发，探索、生成并验证量子程序。</p>
+          <p>LoomQ 帮助<QuantumTerm english="">开发者</QuantumTerm>从熟悉的编程方式出发，探索、生成并验证量子程序。</p>
           <div className="learn-landing-actions">
             <a className="learn-primary learn-guide-link" href="#learn-quickstart">30 秒看懂一个量子程序 <span>↓</span></a>
             <button className="learn-landing-secondary" onClick={onStart}>直接选择实验 <span>→</span></button>
