@@ -163,10 +163,20 @@ def _git_output(arguments: Sequence[str]) -> str | None:
 
 
 def _repository_state() -> dict[str, Any]:
+    metadata_available = (
+        _git_output(("rev-parse", "--is-inside-work-tree")) == "true"
+    )
+    if not metadata_available:
+        return {
+            "source_commit": "unavailable",
+            "dirty": None,
+            "git_metadata_available": False,
+        }
     dirty_output = _git_output(("status", "--porcelain"))
     return {
         "source_commit": _git_output(("rev-parse", "HEAD")) or "unavailable",
         "dirty": bool(dirty_output) if dirty_output is not None else None,
+        "git_metadata_available": True,
     }
 
 
@@ -198,14 +208,22 @@ def _doc_backend_ids(text: str) -> tuple[str, ...]:
 
 
 def _check(name: str, passed: bool, detail: str) -> dict[str, Any]:
-    return {"name": name, "passed": passed, "detail": detail}
+    return {
+        "name": name,
+        "status": "PASS" if passed else "FAIL",
+        "passed": passed,
+        "detail": detail,
+    }
+
+
+def _skip_check(name: str, detail: str) -> dict[str, Any]:
+    return {"name": name, "status": "SKIP", "passed": None, "detail": detail}
 
 
 def _snapshot_contract(
     raw_payload: Mapping[str, Any],
     raw_backends: Sequence[Mapping[str, Any]],
     content_sha256: str,
-    git_drift: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     loaded = load_backends(CAPABILITY_PATH)
     loaded_version = load_capability_version(CAPABILITY_PATH)
@@ -279,27 +297,6 @@ def _snapshot_contract(
             doc_ids == ids,
             "documented_ids=%s" % ",".join(doc_ids),
         ),
-        _check(
-            "working_tree_matches_head_blob",
-            bool(git_drift["working_tree_matches_head"]),
-            "working=%s head=%s"
-            % (git_drift["working_tree_blob_oid"], git_drift["head_blob_oid"]),
-        ),
-        _check(
-            "local_upstream_ref_available",
-            bool(git_drift["upstream_available"]),
-            "ref=%s commit=%s"
-            % (UPSTREAM_REF, git_drift["upstream_commit"]),
-        ),
-        _check(
-            "working_tree_matches_local_upstream_blob",
-            bool(git_drift["working_tree_matches_upstream"]),
-            "working=%s upstream=%s"
-            % (
-                git_drift["working_tree_blob_oid"],
-                git_drift["upstream_blob_oid"],
-            ),
-        ),
     ]
     first_backend = raw_backends[0] if raw_backends else {}
     schema = {
@@ -320,6 +317,52 @@ def _snapshot_contract(
         },
     }
     return checks, schema
+
+
+def _repository_drift_checks(
+    git_drift: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    names = (
+        "working_tree_matches_head_blob",
+        "local_upstream_ref_available",
+        "working_tree_matches_local_upstream_blob",
+        "head_matches_local_upstream_blob",
+    )
+    if not git_drift["repository_metadata_available"]:
+        # Docker / archive 不携带仓库元数据，显式记录不可用而不是伪造通过。
+        return [
+            _skip_check(name, "Git repository metadata unavailable")
+            for name in names
+        ]
+    return [
+        _check(
+            names[0],
+            bool(git_drift["working_tree_matches_head"]),
+            "working=%s head=%s"
+            % (git_drift["working_tree_blob_oid"], git_drift["head_blob_oid"]),
+        ),
+        _check(
+            names[1],
+            bool(git_drift["upstream_available"]),
+            "ref=%s commit=%s"
+            % (UPSTREAM_REF, git_drift["upstream_commit"]),
+        ),
+        _check(
+            names[2],
+            bool(git_drift["working_tree_matches_upstream"]),
+            "working=%s upstream=%s"
+            % (
+                git_drift["working_tree_blob_oid"],
+                git_drift["upstream_blob_oid"],
+            ),
+        ),
+        _check(
+            names[3],
+            bool(git_drift["head_matches_upstream"]),
+            "head=%s upstream=%s"
+            % (git_drift["head_blob_oid"], git_drift["upstream_blob_oid"]),
+        ),
+    ]
 
 
 def _regression_entry(
@@ -364,32 +407,59 @@ def build_report() -> dict[str, Any]:
     raw_backends: list[Mapping[str, Any]] = raw_backends_value
     content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
     relative_path = str(CAPABILITY_PATH.relative_to(REPOSITORY_ROOT))
-    working_blob = _git_output(("hash-object", relative_path))
-    head_blob = _git_output(("rev-parse", "HEAD:%s" % relative_path))
-    upstream_commit = _git_output(("rev-parse", UPSTREAM_REF))
-    upstream_blob = _git_output(
-        ("rev-parse", "%s:%s" % (UPSTREAM_REF, relative_path))
+    metadata_available = repository["git_metadata_available"]
+    working_blob = (
+        _git_output(("hash-object", relative_path)) if metadata_available else None
+    )
+    head_blob = (
+        _git_output(("rev-parse", "HEAD:%s" % relative_path))
+        if metadata_available
+        else None
+    )
+    upstream_commit = (
+        _git_output(("rev-parse", UPSTREAM_REF)) if metadata_available else None
+    )
+    upstream_blob = (
+        _git_output(("rev-parse", "%s:%s" % (UPSTREAM_REF, relative_path)))
+        if metadata_available
+        else None
     )
     git_drift = {
+        "repository_metadata_available": metadata_available,
+        "availability": "available" if metadata_available else "unavailable",
         "working_tree_blob_oid": working_blob,
         "head_blob_oid": head_blob,
         "upstream_ref": UPSTREAM_REF,
         "upstream_commit": upstream_commit,
         "upstream_blob_oid": upstream_blob,
-        "upstream_available": upstream_commit is not None and upstream_blob is not None,
-        "working_tree_matches_head": working_blob is not None and working_blob == head_blob,
+        "upstream_available": (
+            upstream_commit is not None and upstream_blob is not None
+            if metadata_available
+            else None
+        ),
+        "working_tree_matches_head": (
+            working_blob is not None and working_blob == head_blob
+            if metadata_available
+            else None
+        ),
         "working_tree_matches_upstream": (
             working_blob is not None and working_blob == upstream_blob
+            if metadata_available
+            else None
         ),
-        "head_matches_upstream": head_blob is not None and head_blob == upstream_blob,
+        "head_matches_upstream": (
+            head_blob is not None and head_blob == upstream_blob
+            if metadata_available
+            else None
+        ),
         "network_requests": 0,
     }
     checks, schema = _snapshot_contract(
         raw_payload,
         raw_backends,
         content_sha256,
-        git_drift,
     )
+    repository_drift_checks = _repository_drift_checks(git_drift)
     capabilities = {
         str(backend["id"]): dict(backend) for backend in raw_backends
     }
@@ -399,7 +469,31 @@ def build_report() -> dict[str, Any]:
     regression_passed = sum(entry["status"] == "PASS" for entry in regressions)
     regression_failed = len(regressions) - regression_passed
     failed_checks = [check["name"] for check in checks if not check["passed"]]
-    status = "PASS" if not failed_checks and regression_failed == 0 else "FAIL"
+    failed_drift_checks = [
+        check["name"]
+        for check in repository_drift_checks
+        if check["status"] == "FAIL"
+    ]
+    skipped_drift_checks = [
+        check["name"]
+        for check in repository_drift_checks
+        if check["status"] == "SKIP"
+    ]
+    drift_status = (
+        "FAIL"
+        if failed_drift_checks
+        else "SKIP"
+        if skipped_drift_checks
+        else "PASS"
+    )
+    git_drift["status"] = drift_status
+    status = (
+        "PASS"
+        if not failed_checks
+        and not failed_drift_checks
+        and regression_failed == 0
+        else "FAIL"
+    )
     return {
         "case_set_version": CASE_SET_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -424,6 +518,18 @@ def build_report() -> dict[str, Any]:
             "failed_checks": failed_checks,
         },
         "contract_checks": checks,
+        "repository_drift_summary": {
+            "status": drift_status,
+            "passed": len(repository_drift_checks)
+            - len(failed_drift_checks)
+            - len(skipped_drift_checks),
+            "failed": len(failed_drift_checks),
+            "skipped": len(skipped_drift_checks),
+            "total": len(repository_drift_checks),
+            "failed_checks": failed_drift_checks,
+            "skipped_checks": skipped_drift_checks,
+        },
+        "repository_drift_checks": repository_drift_checks,
         "regression_summary": {
             "passed": regression_passed,
             "failed": regression_failed,
@@ -437,11 +543,13 @@ def build_report() -> dict[str, Any]:
                 "select_backends",
             ],
             "contract_check_count": len(checks),
+            "repository_drift_check_count": len(repository_drift_checks),
             "selector_case_ids": [case.case_id for case in REGRESSION_CASES],
             "network_requests": 0,
         },
         "remaining_risk": [
             "The upstream comparison uses the existing local upstream/main ref and does not fetch the network; a stale local ref cannot detect a newer remote commit.",
+            "Repository drift checks are unavailable in Docker/archive environments without Git metadata and must also be run in a real checkout before release.",
             "The capability snapshot is an evaluator baseline, not live backend availability, price, or queue telemetry.",
             "Natural-language constraint extraction remains model-dependent; this preflight verifies the deterministic selector after structured constraints exist.",
         ],
