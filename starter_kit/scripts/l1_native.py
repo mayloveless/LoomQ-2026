@@ -68,6 +68,8 @@ def normalized_native_counts(payload: Dict[str, Any], shots: int) -> Dict[str, i
         if not isinstance(raw_counts, dict) or not raw_counts:
             raise ValueError("native payload must contain non-empty counts")
         counts = {str(key): int(value) for key, value in raw_counts.items()}
+        if payload.get("count_key_order") == "q0_to_qn":
+            counts = {key[::-1]: value for key, value in counts.items()}
     if sum(counts.values()) != shots:
         raise ValueError("native counts total must equal shots")
     return counts

@@ -98,8 +98,12 @@ def main() -> int:
                     request["artifact"], request["shots"]
                 )
                 version = _package_version("pyqpanda")
+        payload = {"counts": dict(counts), "sdk_version": version}
+        if target == "spinq":
+            # QASMCompiler counts 的首字符对应 q0，与 LoomQ key 顺序相反。
+            payload["count_key_order"] = "q0_to_qn"
         json.dump(
-            {"counts": dict(counts), "sdk_version": version},
+            payload,
             sys.stdout,
             ensure_ascii=False,
         )

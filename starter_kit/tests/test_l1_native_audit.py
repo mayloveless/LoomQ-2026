@@ -134,6 +134,16 @@ class NativeArtifactShapeTests(unittest.TestCase):
         # CX Oracle 负责对可观测的 control/target 方向做语义攻击。
 
 
+class NativeNormalizationTests(unittest.TestCase):
+    def test_spinq_vendor_q0_first_counts_are_reversed_to_little_key(self) -> None:
+        payload = {
+            "counts": {"01": 4},
+            "count_key_order": "q0_to_qn",
+        }
+
+        self.assertEqual({"10": 4}, normalized_native_counts(payload, 4))
+
+
 class _NativeTargetMixin:
     TARGET = ""
 

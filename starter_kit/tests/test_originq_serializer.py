@@ -32,16 +32,18 @@ class OriginQSerializerTests(unittest.TestCase):
         lines = serialize_originq(parse_qasm(source)).splitlines()
         self.assertEqual(
             [
-                "H q[0]", "X q[0]", "S q[0]", "SDAG q[0]", "T q[0]",
-                "TDAG q[0]", "RY(%s) q[0]" % format(math.pi / 2, ".17g"),
-                "RZ(%s) q[1]" % format(-math.pi / 4, ".17g"), "CNOT q[0], q[1]",
-                "CU1(%s) q[0], q[1]" % format(3 * math.pi / 8, ".17g"),
+                "H q[0]", "X q[0]", "S q[0]",
+                "RZ q[0],(%s)" % format(-math.pi / 2, ".17g"), "T q[0]",
+                "RZ q[0],(%s)" % format(-math.pi / 4, ".17g"),
+                "RY q[0],(%s)" % format(math.pi / 2, ".17g"),
+                "RZ q[1],(%s)" % format(-math.pi / 4, ".17g"), "CNOT q[0], q[1]",
+                "CR q[0], q[1],(%s)" % format(3 * math.pi / 8, ".17g"),
                 "SWAP q[0], q[1]", "TOFFOLI q[0], q[1], q[2]",
             ],
             lines[2:14],
         )
 
-    def test_execution_mode_only_uses_pyqpanda_385_compatible_syntax(self) -> None:
+    def test_public_and_execution_modes_use_contract_sdk_compatible_syntax(self) -> None:
         source = HEADER + (
             "qreg q[2]; creg c[2]; sdg q[0]; tdg q[1]; "
             "ry(pi/2) q[0]; rz(-pi/4) q[1]; cu1(pi/8) q[0], q[1]; "
@@ -51,17 +53,13 @@ class OriginQSerializerTests(unittest.TestCase):
         public = serialize_originq(parse_qasm(source))
         execution = serialize_originq(parse_qasm(source), execution_mode=True)
 
-        self.assertIn("SDAG q[0]", public)
-        self.assertIn("TDAG q[1]", public)
-        self.assertIn("RY(%s) q[0]" % format(math.pi / 2, ".17g"), public)
-        self.assertIn("CU1(%s) q[0], q[1]" % format(math.pi / 8, ".17g"), public)
-        self.assertNotIn("SDAG", execution)
-        self.assertNotIn("TDAG", execution)
-        self.assertIn("DAGGER\nS q[0]\nENDDAGGER", execution)
-        self.assertIn("DAGGER\nT q[1]\nENDDAGGER", execution)
-        self.assertIn("RY q[0],(%s)" % format(math.pi / 2, ".17g"), execution)
-        self.assertIn("RZ q[1],(%s)" % format(-math.pi / 4, ".17g"), execution)
-        self.assertIn("CR q[0], q[1],(%s)" % format(math.pi / 8, ".17g"), execution)
+        self.assertEqual(public, execution)
+        self.assertNotIn("SDAG", public)
+        self.assertNotIn("TDAG", public)
+        self.assertIn("RZ q[0],(%s)" % format(-math.pi / 2, ".17g"), public)
+        self.assertIn("RZ q[1],(%s)" % format(-math.pi / 4, ".17g"), public)
+        self.assertIn("RY q[0],(%s)" % format(math.pi / 2, ".17g"), public)
+        self.assertIn("CR q[0], q[1],(%s)" % format(math.pi / 8, ".17g"), public)
 
     def test_multiple_registers_and_crossed_measurements_are_flattened(self) -> None:
         source = HEADER + (

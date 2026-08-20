@@ -1,5 +1,6 @@
 """Serialize platform-independent Circuit IR as OriginQ OriginIR."""
 
+import math
 from typing import Dict, List, Tuple
 
 from ..ir import (
@@ -32,6 +33,8 @@ _GATE_SPECS: Dict[str, Tuple[str, int, int]] = {
     "ccx": ("TOFFOLI", 3, 0),
 }
 
+_INVERSE_PHASE_ANGLES = {"sdg": -math.pi / 2, "tdg": -math.pi / 4}
+
 
 def _measurement_count(operation: MeasureOperation) -> int:
     """Return the number of flattened pairs emitted for one measurement."""
@@ -46,8 +49,8 @@ def _measurement_count(operation: MeasureOperation) -> int:
 def serialize_originq(circuit: Circuit, *, execution_mode: bool = False) -> str:
     """Return a complete OriginIR program with globally flattened bit indices.
 
-    默认模式严格遵守公开合同；执行模式仅处理 pyQPanda 3.8.5 已实测的
-    OriginIR 解析差异，不改变公开 ``transpile()`` 的输出。
+    public 与 execution mode 都使用合同允许且 pyQPanda 3.8.5 可解析的写法；
+    保留 ``execution_mode`` 参数以兼容 Runner 的现有调用契约。
     """
     qubit_indices = quantum_bit_indices(circuit)
     mappings = iter(measurement_mapping(circuit))
@@ -86,11 +89,12 @@ def serialize_originq(circuit: Circuit, *, execution_mode: bool = False) -> str:
             parameter_values = ", ".join(
                 format(value, ".17g") for value in operation.parameters
             )
-            if execution_mode and operation.name in ("sdg", "tdg"):
-                # pyQPanda 3.8.5 只接受 DAGGER 块，不识别 SDAG/TDAG 门名。
-                lines.extend(("DAGGER", "%s %s" % (origin_name[0], operands), "ENDDAGGER"))
-            elif execution_mode and operation.parameters:
-                # SDK 要求参数位于操作数之后，且 CU1 的原生等价门名是 CR。
+            if operation.name in _INVERSE_PHASE_ANGLES:
+                # SDK 不识别 SDAG/TDAG；等价 RZ 仅相差不可观测的全局相位。
+                angle = format(_INVERSE_PHASE_ANGLES[operation.name], ".17g")
+                lines.append("RZ %s,(%s)" % (operands, angle))
+            elif operation.parameters:
+                # 合同接受后置参数，且 CU1 的 OriginIR 等价门名可使用 CR。
                 sdk_name = "CR" if operation.name == "cu1" else origin_name
                 lines.append("%s %s,(%s)" % (sdk_name, operands, parameter_values))
             else:
