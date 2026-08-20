@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
+import time
 from typing import Any, Mapping
 
 try:
@@ -40,6 +41,9 @@ z 门不受支持，绝对不要输出 z；需要等价的 Z 相位时使用连�
 未声明的约束使用 null、false 或 unspecified，不要擅自收紧。
 """
 
+# 正式评测每 case 为 120 秒；内部预留 5 秒给异常归一化和进程回收。
+CASE_DEADLINE_SECONDS = 115.0
+
 TARGET_JUDGE_SYSTEM_PROMPT = """你是独立的量子目标态规格提取器，只能依据用户原始请求判断目标，不能查看或猜测候选 QASM。
 只返回一个 JSON 对象，不返回额外散文，也绝对不要返回 QASM。
 如果目标可以可靠表示为纯态，返回：
@@ -55,7 +59,7 @@ _JSON_FENCE_RE = re.compile(
     r"^```json\s*\n(?P<body>.*?)\n```$", re.IGNORECASE | re.DOTALL
 )
 _NEGATED_MEASUREMENT_RE = re.compile(
-    r"(?:不(?:需要|要求|要|进行)?|无需(?:进行)?|省略|移除|删除)"
+    r"(?:不(?:需要|要求|要|进行|做)?|无需(?:进行)?|省略|移除|删除)"
     r"(?:添加|进行|保留)?(?:任何)?(?:测量|测定|读出|采样)"
     r"|(?:without|no)\s+(?:any\s+)?(?:measurements?|measurement|measuring|readouts?|sampling)"
     r"|(?:do\s+not|don't|omit|remove)\s+(?:add\s+|include\s+|perform\s+)?"
@@ -76,7 +80,7 @@ _KET_STATE_RE = re.compile(r"\|\s*[01]+\s*(?:>|⟩)")
 _EXPLICIT_PURE_STATE_RE = re.compile(
     r"(?:basis|state|ket)\s+amplitudes?|"
     r"(?:指定|明确|目标|各(?:基态|基矢|态)).{0,8}振幅|振幅.{0,8}(?:为|分别|等于)|"
-    r"relative\s+phase|相对相位|"
+    r"relative\s+phase|phase\s+(?:offset|difference)|相对相位|相位差|"
     r"pure[-\s]?state|纯态|state[-\s]?preparation|"
     r"prepare\b.{0,32}\bquantum\s+state\b|"
     r"制备.{0,24}(?:量子态|目标态|纠缠态|叠加态)",
@@ -397,9 +401,21 @@ def _format_backend_reply(
     )
 
 
-def _call_model(messages: list[dict[str, str]]) -> Any:
+def _remaining_case_time(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0.0:
+        raise RuntimeError("L2 case deadline exhausted")
+    return remaining
+
+
+def _call_model(messages: list[dict[str, str]], *, deadline: float) -> Any:
+    # deadline 耗尽时在 transport 前停止，不能产生额外模型调用。
+    remaining = _remaining_case_time(deadline)
     try:
-        return llm_client.chat_completion(messages)
+        return llm_client.chat_completion(
+            messages,
+            request_timeout_seconds=remaining,
+        )
     except Exception:
         # 传输层或测试替身的异常可能包含凭证，因此统一改写并断开异常链。
         raise RuntimeError("L2 model request failed") from None
@@ -472,11 +488,13 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
     """Run the production L2 path with an optional additive trace observer."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("L2 prompt must be a non-empty string")
+    started = time.monotonic()
+    deadline = started + CASE_DEADLINE_SECONDS
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
-    raw_response = _call_model(messages)
+    raw_response = _call_model(messages, deadline=deadline)
     payload = _parse_response_payload(raw_response)
     task_type = payload.get("task_type")
     _trace(
@@ -520,6 +538,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             data={"backend_ids": backend_ids, "no_match": not bool(matches)},
         )
         reply = _format_backend_reply(constraints, matches)
+        _remaining_case_time(deadline)
         _trace(
             trace_sink,
             stage="agent_result",
@@ -551,7 +570,9 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         {"role": "system", "content": TARGET_JUDGE_SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
-    target = _parse_target_judge_response(_call_model(judge_messages))
+    target = _parse_target_judge_response(
+        _call_model(judge_messages, deadline=deadline)
+    )
     target_trace_data = target.as_prompt_payload()
     # 模型 explanation 不参与裁判，也不进入安全调试协议。
     target_trace_data.pop("explanation", None)
@@ -603,7 +624,7 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
                 ),
             },
         ]
-        repair_response = _call_model(repair_messages)
+        repair_response = _call_model(repair_messages, deadline=deadline)
         repaired_candidate = _parse_candidate_response(repair_response)
         _trace(
             trace_sink,
@@ -629,6 +650,8 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
                 "model repair failed QASM semantic verification; repair limit reached"
             ) from None
 
+    # 本地验证也属于同一个 case；超时后不能再返回看似成功的结果。
+    _remaining_case_time(deadline)
     explanation = generated.explanation or "已生成并通过 OpenQASM 2.0 校验。"
     reply = "%s\n\n```qasm\n%s\n```" % (explanation, generated.qasm)
     _trace(
@@ -652,6 +675,7 @@ def agent_chat(prompt: str) -> str:
 
 
 __all__ = [
+    "CASE_DEADLINE_SECONDS",
     "GenerationResponse",
     "_run_agent",
     "agent_chat",

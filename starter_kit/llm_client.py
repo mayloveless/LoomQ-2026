@@ -9,6 +9,7 @@ language.
 from __future__ import annotations
 
 import json
+import math
 import os
 import urllib.error
 import urllib.request
@@ -27,7 +28,7 @@ def _configuration() -> tuple[str, str, str, float]:
         timeout = float(os.environ.get("LOOMQ_LLM_TIMEOUT_SECONDS", "120"))
     except ValueError as exc:
         raise RuntimeError("invalid LoomQ L2 numeric environment variable") from exc
-    if timeout <= 0:
+    if not math.isfinite(timeout) or timeout <= 0:
         raise RuntimeError("LoomQ L2 timeout must be positive")
     return (
         os.environ["LOOMQ_LLM_BASE_URL"].rstrip("/"),
@@ -37,9 +38,24 @@ def _configuration() -> tuple[str, str, str, float]:
     )
 
 
-def chat_completion(messages: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+def chat_completion(
+    messages: list[dict[str, Any]],
+    *,
+    request_timeout_seconds: float | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
     """Create one non-streaming chat completion using the public L2 contract."""
     base_url, api_key, model, timeout = _configuration()
+    if request_timeout_seconds is not None:
+        if (
+            isinstance(request_timeout_seconds, bool)
+            or not isinstance(request_timeout_seconds, (int, float))
+            or not math.isfinite(float(request_timeout_seconds))
+            or request_timeout_seconds <= 0
+        ):
+            raise RuntimeError("LoomQ L2 timeout override must be positive")
+        # 内部 deadline 只收紧传输超时，绝不进入 OpenAI-compatible payload。
+        timeout = min(timeout, float(request_timeout_seconds))
     payload = {
         "model": model,
         "messages": messages,

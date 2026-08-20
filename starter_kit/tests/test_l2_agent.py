@@ -117,6 +117,8 @@ class L2AgentTests(unittest.TestCase):
             "给出每个 basis amplitude",
             "指定各基态振幅",
             "保持指定的 relative phase",
+            "keep a phase offset of pi between the two components",
+            "两个分量的相位差为 π",
             "prepare this pure state",
             "perform state preparation for a quantum state",
             "制备指定量子态",
@@ -156,6 +158,21 @@ class L2AgentTests(unittest.TestCase):
     def test_fenced_json_response_is_parsed(self):
         content = "```json\n%s\n```" % generation_json()
         self.assertEqual(parse_generation_response(completion(content)).qasm, GHZ_QASM)
+
+    def test_prose_wrapped_json_is_rejected_without_benchmark_evidence(self):
+        content = "结果如下：\n%s\n完成。" % generation_json()
+        with self.assertRaisesRegex(RuntimeError, "not valid JSON"):
+            parse_generation_response(completion(content))
+
+    def test_two_top_level_json_objects_are_rejected(self):
+        content = "%s\n%s" % (generation_json(), generation_json())
+        with self.assertRaisesRegex(RuntimeError, "not valid JSON"):
+            parse_generation_response(completion(content))
+
+    def test_fence_must_contain_only_one_complete_json_object(self):
+        content = "```json\n%s\n%s\n```" % (generation_json(), generation_json())
+        with self.assertRaisesRegex(RuntimeError, "not valid JSON"):
+            parse_generation_response(completion(content))
 
     def test_plain_qasm_is_extracted(self):
         self.assertEqual(extract_qasm("\n" + GHZ_QASM + "\n"), GHZ_QASM)

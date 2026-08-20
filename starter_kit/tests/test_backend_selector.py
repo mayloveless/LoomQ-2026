@@ -161,6 +161,30 @@ class BackendSelectorTests(unittest.TestCase):
         chat.assert_called_once()
 
     @mock.patch("loomq.l2_agent.llm_client.chat_completion")
+    def test_model_constraint_types_are_not_coerced(self, chat):
+        invalid_values = (
+            ("min_qubits", "20"),
+            ("require_qpu", "false"),
+            ("require_no_queue", 1),
+            ("allow_account_required", "no"),
+        )
+        for field, value in invalid_values:
+            with self.subTest(field=field, value=value):
+                chat.reset_mock()
+                raw = {
+                    "min_qubits": 20,
+                    "require_qpu": False,
+                    "require_no_queue": True,
+                    "cost_policy": "free_only",
+                    "allow_account_required": False,
+                }
+                raw[field] = value
+                chat.return_value = completion_for_backend_selection(raw)
+                with self.assertRaisesRegex(RuntimeError, "invalid constraints"):
+                    adapter.agent_chat("至少 20 比特、免费且零排队")
+                chat.assert_called_once()
+
+    @mock.patch("loomq.l2_agent.llm_client.chat_completion")
     def test_agent_ignores_model_backend_id_and_calls_model_once(self, chat):
         chat.return_value = completion_for_backend_selection(
             {
