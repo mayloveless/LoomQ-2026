@@ -91,13 +91,15 @@ def _run_cloud_worker(action: str, output_dir: Path, *arguments: str) -> dict[st
         raise RealHardwareOperationError("SpinQ Cloud worker did not complete") from exc
     if completed.returncode != 0:
         raise RealHardwareOperationError("SpinQ Cloud worker did not complete")
-    try:
-        value = json.loads(completed.stdout)
-    except json.JSONDecodeError as exc:
-        raise RealHardwareOperationError("SpinQ Cloud worker returned invalid data") from exc
-    if not isinstance(value, dict):
-        raise RealHardwareOperationError("SpinQ Cloud worker returned invalid data")
-    return value
+    # 官方 SDK 在创建任务时可能向 stdout 写入提示；脚本最后一行始终是本服务要求的 JSON。
+    for line in reversed(completed.stdout.splitlines()):
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise RealHardwareOperationError("SpinQ Cloud worker returned invalid data")
 
 
 def submit_bell(output_dir: Path = RUNTIME_OUTPUT) -> dict[str, str]:

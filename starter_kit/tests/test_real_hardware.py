@@ -1,6 +1,8 @@
 """SpinQ 真机 Web 服务的离线边界测试。"""
 
 import os
+from pathlib import Path
+import subprocess
 import unittest
 from unittest import mock
 
@@ -59,6 +61,19 @@ class RealHardwareServiceTests(unittest.TestCase):
             real_hardware.get_job("task-123"),
         )
         worker.assert_called_once_with("query", real_hardware.RUNTIME_OUTPUT, "--job-id", "task-123")
+
+    @mock.patch("loomq.real_hardware._cloud_python")
+    @mock.patch("loomq.real_hardware.subprocess.run")
+    def test_worker_uses_final_json_line_after_sdk_output(self, run, cloud_python):
+        cloud_python.return_value = Path("/opt/spinq-cloud-venv/bin/python")
+        run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="SpinQ SDK: task accepted\n{\"job_id\": \"task-123\"}\n",
+            stderr="",
+        )
+
+        result = real_hardware._run_cloud_worker("submit", Path("/tmp/runtime"))
+
+        self.assertEqual({"job_id": "task-123"}, result)
 
 
 if __name__ == "__main__":
