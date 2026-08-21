@@ -66,7 +66,7 @@ describe('Task 13G Explorer entry', () => {
       SCENARIOS.find((scenario) => scenario.id === 'search')!.prompt.replaceAll('>', '&gt;'),
     )
     expect(markup).toContain('aria-current="page"')
-    expect(markup).toContain('<strong>Explorer</strong>')
+    expect(markup).toContain('<strong>自由探索</strong>')
     expect(markup).not.toContain('Experiments · 选择实验')
     expect(markup).not.toContain('Learn · 基础概念')
     expect(markup).not.toContain('场景示例')
