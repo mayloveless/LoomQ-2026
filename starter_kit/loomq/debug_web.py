@@ -6,7 +6,10 @@ import argparse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import mimetypes
+from pathlib import Path
 from typing import Any, Callable, Sequence
+from urllib.parse import unquote, urlsplit
 
 from .backend_selector import (
     Backend,
@@ -29,6 +32,7 @@ from .teaching_explainer import TeachingExplanation, explain_validated_circuit
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+DEFAULT_WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 MAX_REQUEST_BYTES = 64 * 1024
 DebugBuilder = Callable[[str], tuple[str, Sequence[Any]]]
 TeachingExplainer = Callable[
@@ -319,6 +323,38 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _serve_web_asset(self) -> bool:
+        """按需托管已构建的前端资源，API 路由始终优先。"""
+        web_dist = getattr(self.server, "web_dist", None)
+        if not isinstance(web_dist, Path) or not web_dist.is_dir():
+            return False
+
+        request_path = unquote(urlsplit(self.path).path)
+        relative_path = "index.html" if request_path in ("", "/") else request_path.lstrip("/")
+        try:
+            candidate = (web_dist / relative_path).resolve()
+            candidate.relative_to(web_dist.resolve())
+        except (OSError, ValueError):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "页面不存在。"})
+            return True
+
+        # 前端采用单页应用；非静态资源路径回退到入口页面。
+        if not candidate.is_file() and "." not in Path(relative_path).name:
+            candidate = web_dist / "index.html"
+        if not candidate.is_file():
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "页面不存在。"})
+            return True
+
+        body = candidate.read_bytes()
+        content_type = mimetypes.guess_type(candidate.name)[0] or "application/octet-stream"
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store" if candidate.name == "index.html" else "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(body)
+        return True
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
         if self.path == "/api/health":
             self._send_json(HTTPStatus.OK, {"status": "ok"})
@@ -347,6 +383,8 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._send_json(HTTPStatus.OK, payload)
+            return
+        if self._serve_web_asset():
             return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
 
@@ -487,17 +525,35 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
 
 
 def create_server(
-    host: str = DEFAULT_HOST, port: int = DEFAULT_PORT
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    web_dist: Path | None = None,
 ) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), DebugRequestHandler)
+    server = ThreadingHTTPServer((host, port), DebugRequestHandler)
+    server.web_dist = web_dist  # type: ignore[attr-defined]
+    return server
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LoomQ 本地 Quantum DevTools API")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--serve-web",
+        action="store_true",
+        help="托管已构建的 LoomQ Web 页面（Docker 单容器部署使用）。",
+    )
+    parser.add_argument(
+        "--web-dist",
+        type=Path,
+        default=DEFAULT_WEB_DIST,
+        help="前端构建产物目录；仅与 --serve-web 一起使用。",
+    )
     args = parser.parse_args(argv)
-    server = create_server(args.host, args.port)
+    web_dist = args.web_dist if args.serve_web else None
+    if web_dist is not None and not web_dist.is_dir():
+        parser.error("前端构建产物目录不存在：%s" % web_dist)
+    server = create_server(args.host, args.port, web_dist)
     print("LoomQ debug API: http://%s:%d" % server.server_address)
     try:
         server.serve_forever()

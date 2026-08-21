@@ -31,29 +31,34 @@ class RealHardwareServiceTests(unittest.TestCase):
             real_hardware.capability_status(),
         )
 
-    @mock.patch("loomq.real_hardware.submit_spinq_cloud.submit_task", return_value="task-123")
-    @mock.patch("loomq.real_hardware.submit_spinq_cloud.dry_run", return_value=("source", "program"))
+    @mock.patch("loomq.real_hardware._run_cloud_worker", return_value={"job_id": "task-123"})
     @mock.patch("loomq.real_hardware._configured", return_value=(True, ""))
     @mock.patch("loomq.real_hardware._backend", return_value="gemini_vp")
     def test_submit_bell_reuses_script_submission(
-        self, backend, configured, dry_run, submit_task
+        self, backend, configured, worker
     ):
         payload = real_hardware.submit_bell()
 
         self.assertEqual(
             {"job_id": "task-123", "status": "submitted", "platform": "spinq"}, payload
         )
-        dry_run.assert_called_once()
-        self.assertEqual(real_hardware.RUNTIME_OUTPUT, submit_task.call_args.args[4])
+        worker.assert_called_once_with(
+            "submit", real_hardware.RUNTIME_OUTPUT,
+            "--input", str(real_hardware.submit_spinq_cloud.DEFAULT_INPUT),
+            "--backend", "gemini_vp", "--shots", "1000",
+        )
 
-    @mock.patch("loomq.real_hardware.submit_spinq_cloud.query_task", return_value=("completed", {"counts": {"00": 1}}))
+    @mock.patch(
+        "loomq.real_hardware._run_cloud_worker",
+        return_value={"status": "completed", "result": {"counts": {"00": 1}}},
+    )
     @mock.patch("loomq.real_hardware._require_configured", return_value="gemini_vp")
-    def test_get_job_returns_normalized_status(self, configured, query_task):
+    def test_get_job_returns_normalized_status(self, configured, worker):
         self.assertEqual(
             {"job_id": "task-123", "status": "completed", "result": {"counts": {"00": 1}}},
             real_hardware.get_job("task-123"),
         )
-        query_task.assert_called_once_with("task-123", real_hardware.RUNTIME_OUTPUT)
+        worker.assert_called_once_with("query", real_hardware.RUNTIME_OUTPUT, "--job-id", "task-123")
 
 
 if __name__ == "__main__":

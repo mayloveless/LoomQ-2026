@@ -3,6 +3,9 @@
 from http import HTTPStatus
 import io
 import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -285,6 +288,7 @@ class DebugWebHTTPTests(unittest.TestCase):
         handler.headers = {"Content-Length": str(len(body))}
         handler.rfile = io.BytesIO(body)
         handler.wfile = io.BytesIO()
+        handler.server = SimpleNamespace(web_dist=None)
         handler.send_response = mock.Mock()
         handler.send_header = mock.Mock()
         handler.end_headers = mock.Mock()
@@ -297,6 +301,27 @@ class DebugWebHTTPTests(unittest.TestCase):
 
         handler.send_response.assert_called_once_with(HTTPStatus.OK)
         self.assertEqual(json.loads(handler.wfile.getvalue()), {"status": "ok"})
+
+    def test_web_entry_is_served_when_static_directory_is_configured(self):
+        with TemporaryDirectory() as directory:
+            web_dist = Path(directory)
+            (web_dist / "index.html").write_text("<main>LoomQ</main>", encoding="utf-8")
+            handler = self.make_handler(path="/")
+            handler.server.web_dist = web_dist
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        self.assertEqual(handler.wfile.getvalue(), b"<main>LoomQ</main>")
+
+    def test_web_static_path_cannot_escape_configured_directory(self):
+        with TemporaryDirectory() as directory:
+            handler = self.make_handler(path="/../../etc/passwd")
+            handler.server.web_dist = Path(directory)
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.NOT_FOUND)
 
     @mock.patch("loomq.debug_web.capability_status")
     def test_real_hardware_status_endpoint_returns_safe_capability(self, status):

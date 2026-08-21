@@ -293,6 +293,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--poll-interval", type=float, default=5.0)
     parser.add_argument("--timeout", type=float, default=7200.0)
     parser.add_argument(
+        "--web-action", choices=("submit", "query"), help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--job-id", help=argparse.SUPPRESS)
+    parser.add_argument(
         "--list-platforms", action="store_true",
         help="list account-visible SpinQ Cloud platforms without creating a task",
     )
@@ -300,7 +304,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.shots <= 0 or args.poll_interval <= 0 or args.timeout <= 0:
         raise SpinQCloudError("shots, poll interval and timeout must be positive")
+    # Web 服务通过专用 Cloud Python 调用本脚本，避免 Cloud SDK 污染 Braket 环境。
+    if args.web_action == "query":
+        if not args.job_id:
+            raise SpinQCloudError("--job-id is required for query")
+        status, result = query_task(args.job_id, args.output_dir)
+        print(json.dumps({"status": status, "result": result}, ensure_ascii=False))
+        return 0
+
     source, submitted = dry_run(args.input)
+    if args.web_action == "submit":
+        if not args.backend:
+            raise SpinQCloudError("--backend is required for submit")
+        try:
+            source_file = str(args.input.resolve().relative_to(STARTER_KIT_ROOT.parent))
+        except ValueError:
+            source_file = str(args.input.resolve())
+        task_code = submit_task(
+            source, submitted, args.backend, args.shots, args.output_dir, source_file
+        )
+        print(json.dumps({"job_id": task_code}, ensure_ascii=False))
+        return 0
     if args.list_platforms:
         if args.submit:
             raise SpinQCloudError("--list-platforms cannot be combined with --submit")

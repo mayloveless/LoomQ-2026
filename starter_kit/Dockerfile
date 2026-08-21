@@ -1,3 +1,16 @@
+FROM node:22-bookworm-slim AS web-builder
+
+WORKDIR /workspace/web
+
+COPY web/package.json web/pnpm-lock.yaml ./
+
+RUN corepack enable && pnpm install --frozen-lockfile
+
+COPY web/ ./
+
+RUN pnpm build
+
+
 FROM python:3.10-slim-bookworm
 
 ARG DEBIAN_MIRROR=https://mirrors.aliyun.com
@@ -35,13 +48,14 @@ RUN pip install --no-cache-dir \
        --timeout 300 --retries 10 \
        -r requirements.txt
 
-# Web 的 SpinQ 真机 API 由主解释器运行；安装官方 Cloud SDK 与 L2 Braket verifier 共用此环境。
+# SpinQ Cloud SDK 固定 ANTLR 4.9.2，而 Braket verifier 需要 4.13.2，必须隔离解释器。
 # 账号、私钥和真机后端仅在 docker run 时通过环境变量/挂载提供，绝不进入镜像层。
-RUN pip install --no-cache-dir \
+RUN python -m venv /opt/spinq-cloud-venv \
+    && /opt/spinq-cloud-venv/bin/pip install --no-cache-dir \
        --index-url "${PYPI_INDEX_URL}" \
        --timeout 300 --retries 10 \
        -r requirements-spinq-cloud.txt \
-    && python -c "import braket; import spinqit_mcp_tools; from Crypto.PublicKey import RSA"
+    && /opt/spinq-cloud-venv/bin/python -c "import spinqit_mcp_tools; from Crypto.PublicKey import RSA"
 
 # SpinQit 与 Braket 依赖不同 ANTLR 版本，使用独立虚拟环境。
 # SpinQit 未区分 CPU/GPU 的 torch 依赖；评测只使用本地模拟器，直接安装官方 CPU wheel，避免 CUDA/cuDNN/Triton 和额外索引解析问题。
@@ -63,8 +77,14 @@ RUN python -m venv /opt/originq-venv \
        -r requirements-originq.txt
 
 ENV LOOMQ_SPINQ_PYTHON=/opt/spinq-venv/bin/python \
-    LOOMQ_ORIGINQ_PYTHON=/opt/originq-venv/bin/python
+    LOOMQ_ORIGINQ_PYTHON=/opt/originq-venv/bin/python \
+    LOOMQ_SPINQ_CLOUD_PYTHON=/opt/spinq-cloud-venv/bin/python
 
 COPY . .
+
+# Web 静态资源由独立的 Node 构建阶段产生，不将本地 node_modules 带入运行镜像。
+COPY --from=web-builder /workspace/web/dist ./web/dist
+
+EXPOSE 8765
 
 CMD ["python","evaluator.py","--level","l1","--target","spinq,originq,braket","--json-out","/tmp/loomq-public-report.json"]
