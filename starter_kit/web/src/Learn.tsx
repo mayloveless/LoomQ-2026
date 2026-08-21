@@ -226,28 +226,36 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         </div>
         <div
           className="learn-product-flow"
-          aria-label="LoomQ 从开发意图到运行平台的能力链路"
+          aria-label="LoomQ 从用户意图到理解测量结果的探索流程"
         >
           <span>YOUR INTENT</span>
           <div>
-            <strong>用自然语言描述目标</strong>
-            <code>生成 · 理解</code>
+            <strong>用户描述目标</strong>
+            <code>目标 · 问题</code>
           </div>
           <i>
-            ↓ <em>AI</em>
+            ↓ <em>EXPLORE</em>
           </i>
           <span>QUANTUM PROGRAM</span>
           <div>
-            <strong>获得可读的量子程序</strong>
-            <code>验证 · 修复</code>
+            <strong>生成并验证量子程序</strong>
+            <code>结构 · 语义</code>
           </div>
           <i>
-            ↓ <em>SELECT</em>
+            ↓ <em>TRACE</em>
           </i>
-          <span>BACKEND</span>
+          <span>EXECUTION TRACE</span>
           <div>
-            <strong>找到合适的运行平台</strong>
-            <code>约束 · 推荐</code>
+            <strong>探索程序如何执行</strong>
+            <code>状态 · 步骤</code>
+          </div>
+          <i>
+            ↓ <em>READ</em>
+          </i>
+          <span>RESULT</span>
+          <div>
+            <strong>理解测量结果</strong>
+            <code>读出 · 分布</code>
           </div>
         </div>
       </section>
