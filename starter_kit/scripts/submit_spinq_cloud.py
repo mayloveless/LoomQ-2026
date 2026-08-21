@@ -37,8 +37,9 @@ def _now() -> str:
 
 def _environment() -> tuple[str, Path, str]:
     """读取官方 Cloud 工具使用的凭据环境变量，绝不返回私钥内容。"""
-    username = os.environ.get("SPINQCLOUDUSERNAME")
-    key_path = os.environ.get("PRIVATEKEYPATH")
+    # 保留原 CLI 变量，并接受 Web 服务更易读的同义变量名。
+    username = os.environ.get("SPINQ_USERNAME") or os.environ.get("SPINQCLOUDUSERNAME")
+    key_path = os.environ.get("SPINQ_KEY_PATH") or os.environ.get("PRIVATEKEYPATH")
     host = os.environ.get("SPINQCLOUDHOST", "http://cloud.spinq.cn:6060")
     if not username or not username.strip():
         raise SpinQCloudError("SPINQCLOUDUSERNAME is not set")
@@ -205,18 +206,25 @@ def dry_run(input_path: Path) -> tuple[str, str]:
     return source, submitted
 
 
-def submit(
-    source: str, submitted: str, backend: str, shots: int, output: Path,
-    source_file: str, poll_interval: float, timeout: float,
-) -> tuple[str, str, Path]:
+def _authenticated_client() -> tuple[dict[str, Any], Any]:
+    """创建已认证客户端；调用方只接收客户端对象，避免传播凭据。"""
     username, key_path, host = _environment()
     sdk = _load_cloud_sdk()
     # 官方客户端常量默认指向 Cloud；环境变量允许显式覆盖测试/正式域名。
     sdk["client_module"].HOST = host
-    signature = _sign_username(username, key_path, sdk)
-    client = sdk["Client"](username, signature)
+    client = sdk["Client"](username, _sign_username(username, key_path, sdk))
     client.login()
+    return sdk, client
+
+
+def submit_task(
+    source: str, submitted: str, backend: str, shots: int, output: Path,
+    source_file: str,
+) -> str:
+    """创建任务并立即落盘提交证据，但不等待量子任务完成。"""
+    sdk, client = _authenticated_client()
     executable = sdk["get_compiler"]("qasm").compile(submitted, 0)
+    username, key_path, _host = _environment()
     cloud_backend = sdk["get_spinq_cloud"](username, str(key_path))
     platform = cloud_backend.get_platform(backend)
     mapping = {index: index for index in range(executable.qnum)}
@@ -227,37 +235,52 @@ def submit(
         api_client=client,
     )
     submitted_at = _now()
-    response = client.create_task(task.to_request())
-    create_raw = _json_response(response)
+    create_raw = _json_response(client.create_task(task.to_request()))
     task_code = _task_code(create_raw)
-    _input, _program, _metadata, raw_file, parsed_file = _record_submission(
+    _record_submission(
         output, task_code, source, submitted, backend, submitted_at, shots, source_file
     )
+    return task_code
+
+
+def query_task(task_code: str, output: Path = DEFAULT_OUTPUT) -> tuple[str, dict[str, Any]]:
+    """查询任务；完成时保存原始及解析后的结果文件。"""
+    sdk, client = _authenticated_client()
+    status_raw = _json_response(client.task_status(task_code))
+    status = _task_status(status_raw).upper()
+    if status in {"S", "SUCCESS", "SUCCEEDED", "FINISHED", "COMPLETED"}:
+        raw = _json_response(client.task_result(task_code))
+        _input, _submitted, _metadata, raw_file, parsed_file = _paths(output, task_code)
+        output.mkdir(parents=True, exist_ok=True)
+        _write_json(raw_file, raw)
+        parsed = _parse_result(raw)
+        _write_json(parsed_file, parsed)
+        return "completed", parsed
+    if status in {"F", "FAILED", "DELETED", "CANCELLED"}:
+        return "failed", {}
+    return "running", {}
+
+
+def submit(
+    source: str, submitted: str, backend: str, shots: int, output: Path,
+    source_file: str, poll_interval: float, timeout: float,
+) -> tuple[str, str, Path]:
+    task_code = submit_task(source, submitted, backend, shots, output, source_file)
     deadline = time.monotonic() + timeout
-    status = "UNKNOWN"
     while True:
-        status_raw = _json_response(client.task_status(task_code))
-        status = _task_status(status_raw)
-        if status.upper() in {"S", "SUCCESS", "SUCCEEDED", "FINISHED", "COMPLETED"}:
-            break
-        if status.upper() in {"F", "FAILED", "DELETED", "CANCELLED"}:
+        status, _result = query_task(task_code, output)
+        if status == "completed":
+            return task_code, status, _paths(output, task_code)[4]
+        if status == "failed":
             raise SpinQCloudError("SpinQ Cloud task completed without a successful result")
         if time.monotonic() >= deadline:
             raise SpinQCloudError("SpinQ Cloud task timed out while polling")
         time.sleep(poll_interval)
-    raw = _json_response(client.task_result(task_code))
-    _write_json(raw_file, raw)
-    _write_json(parsed_file, _parse_result(raw))
-    return task_code, status, parsed_file
 
 
 def list_platforms() -> dict[str, Any]:
     """登录后查询账号可见的平台；该操作不会创建量子任务。"""
-    username, key_path, host = _environment()
-    sdk = _load_cloud_sdk()
-    sdk["client_module"].HOST = host
-    client = sdk["Client"](username, _sign_username(username, key_path, sdk))
-    client.login()
+    _sdk, client = _authenticated_client()
     return _json_response(client.retrieve_remote_platforms())
 
 

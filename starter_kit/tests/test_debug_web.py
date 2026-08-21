@@ -13,6 +13,7 @@ from loomq.debug_web import (
     build_debug_payload,
     build_repair_payload,
 )
+from loomq.real_hardware import RealHardwareNotConfigured
 from loomq.teaching_explainer import TeachingExplanation, TeachingStep
 
 
@@ -296,6 +297,60 @@ class DebugWebHTTPTests(unittest.TestCase):
 
         handler.send_response.assert_called_once_with(HTTPStatus.OK)
         self.assertEqual(json.loads(handler.wfile.getvalue()), {"status": "ok"})
+
+    @mock.patch("loomq.debug_web.capability_status")
+    def test_real_hardware_status_endpoint_returns_safe_capability(self, status):
+        status.return_value = {
+            "spinq": {"available": False, "reason": "真实量子设备未配置"}
+        }
+        handler = self.make_handler(path="/api/real-hardware/status")
+
+        handler.do_GET()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"spinq": {"available": False, "reason": "真实量子设备未配置"}},
+        )
+
+    @mock.patch("loomq.debug_web.submit_bell")
+    def test_real_hardware_run_returns_submitted_job(self, submit):
+        submit.return_value = {
+            "job_id": "task-123", "status": "submitted", "platform": "spinq"
+        }
+        body = json.dumps({"circuit": "bell", "platform": "spinq"}).encode("utf-8")
+        handler = self.make_handler(path="/api/real-hardware/run", body=body)
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        self.assertEqual(json.loads(handler.wfile.getvalue()), submit.return_value)
+        submit.assert_called_once_with()
+
+    @mock.patch("loomq.debug_web.submit_bell", side_effect=RealHardwareNotConfigured())
+    def test_real_hardware_run_hides_missing_credential_details(self, submit):
+        handler = self.make_handler(path="/api/real-hardware/run", body=b"{}")
+
+        handler.do_POST()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            json.loads(handler.wfile.getvalue()),
+            {"error_code": "SPINQ_NOT_CONFIGURED", "message": "真实量子设备未配置"},
+        )
+
+    @mock.patch("loomq.debug_web.get_job")
+    def test_real_hardware_job_status_returns_result(self, get_job_payload):
+        get_job_payload.return_value = {
+            "job_id": "task-123", "status": "completed", "result": {"probabilities": {"00": 0.5}}
+        }
+        handler = self.make_handler(path="/api/real-hardware/status/task-123")
+
+        handler.do_GET()
+
+        handler.send_response.assert_called_once_with(HTTPStatus.OK)
+        self.assertEqual(json.loads(handler.wfile.getvalue()), get_job_payload.return_value)
+        get_job_payload.assert_called_once_with("task-123")
 
     @mock.patch("loomq.debug_web.build_debug_payload")
     def test_debug_endpoint_returns_serialized_payload(self, build_payload):

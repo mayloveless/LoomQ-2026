@@ -17,6 +17,13 @@ from .backend_selector import (
 )
 from .debug_cli import build_debug_trace
 from .qasm_tools import QASMValidationError, validate_qasm
+from .real_hardware import (
+    RealHardwareNotConfigured,
+    RealHardwareOperationError,
+    capability_status,
+    get_job,
+    submit_bell,
+)
 from .teaching_explainer import TeachingExplanation, explain_validated_circuit
 
 
@@ -316,11 +323,42 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/health":
             self._send_json(HTTPStatus.OK, {"status": "ok"})
             return
+        if self.path == "/api/real-hardware/status":
+            self._send_json(HTTPStatus.OK, capability_status())
+            return
+        job_prefix = "/api/real-hardware/status/"
+        if self.path.startswith(job_prefix):
+            job_id = self.path[len(job_prefix):]
+            if not job_id or "/" in job_id or "?" in job_id:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
+                return
+            try:
+                payload = get_job(job_id)
+            except RealHardwareNotConfigured:
+                self._send_json(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    {"error_code": "SPINQ_NOT_CONFIGURED", "message": "真实量子设备未配置"},
+                )
+                return
+            except RealHardwareOperationError:
+                self._send_json(
+                    HTTPStatus.BAD_GATEWAY,
+                    {"error_code": "SPINQ_OPERATION_FAILED", "message": "真实量子设备操作未完成"},
+                )
+                return
+            self._send_json(HTTPStatus.OK, payload)
+            return
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler contract
-        if self.path not in ("/api/debug", "/api/repair", "/api/backend"):
+        if self.path not in (
+            "/api/debug", "/api/repair", "/api/backend", "/api/real-hardware/run"
+        ):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "接口不存在。"})
+            return
+
+        if self.path == "/api/real-hardware/run":
+            self._handle_real_hardware_run()
             return
 
         try:
@@ -405,6 +443,44 @@ class DebugRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(HTTPStatus.OK, payload)
 
+    def _handle_real_hardware_run(self) -> None:
+        """处理固定 Bell 真机请求，不接受任意电路或平台参数。"""
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_length = 0
+        if content_length < 0 or content_length > MAX_REQUEST_BYTES:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "请输入有效的真机实验请求。"})
+            return
+        try:
+            request = (
+                json.loads(self.rfile.read(content_length).decode("utf-8"))
+                if content_length else {}
+            )
+            if not isinstance(request, dict):
+                raise ValueError("invalid real hardware request")
+            # MVP 仅允许 Bell/SpinQ，避免该入口变成通用远程代码执行接口。
+            if request.get("circuit", "bell") != "bell" or request.get("platform", "spinq") != "spinq":
+                raise ValueError("unsupported real hardware request")
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": "仅支持提交 SpinQ Bell 实验。"})
+            return
+        try:
+            payload = submit_bell()
+        except RealHardwareNotConfigured:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error_code": "SPINQ_NOT_CONFIGURED", "message": "真实量子设备未配置"},
+            )
+            return
+        except RealHardwareOperationError:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error_code": "SPINQ_OPERATION_FAILED", "message": "真实量子设备操作未完成"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, payload)
+
     def log_message(self, format: str, *args: Any) -> None:
         # 保留简洁请求日志，不记录请求正文和模型信息。
         super().log_message(format, *args)
@@ -440,6 +516,7 @@ __all__ = [
     "build_backend_payload",
     "build_debug_payload",
     "build_repair_payload",
+    "capability_status",
     "create_server",
     "main",
 ]
