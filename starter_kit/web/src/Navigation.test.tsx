@@ -2,8 +2,32 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { AdvancedCapabilityScreen, BackendResults, RepairEvidence, type BackendResponse, type RepairResponse } from './AdvancedCapability'
 import { GlobalNavigation } from './Navigation'
+import { RecoveryGuidance } from './RecoveryGuidance'
 
 describe('Task 13G-2 global navigation', () => {
+  it('gives beginners safe recovery guidance with clear retry and edit actions', () => {
+    const markup = renderToStaticMarkup(
+      <RecoveryGuidance
+        title="这次检查没有完成"
+        whatHappened="没有得到可供确认的修复提案。"
+        possibleReason="模型服务暂时不可用。"
+        nextStep="重试或修改输入。"
+        onRetry={() => undefined}
+        onModify={() => undefined}
+        retryLabel="重试检查"
+        modifyLabel="修改目标和程序"
+      />,
+    )
+
+    expect(markup).toContain('发生了什么')
+    expect(markup).toContain('可能原因')
+    expect(markup).toContain('下一步操作')
+    expect(markup).toContain('重试检查')
+    expect(markup).toContain('修改目标和程序')
+    expect(markup).toContain('role="alert"')
+    expect(markup).not.toMatch(/traceback|API key|\/home\/|LOOMQ_LLM_/i)
+  })
+
   it('always exposes the five-step capability navigation and highlights the current screen', () => {
     const markup = renderToStaticMarkup(<GlobalNavigation current="experiments" onNavigate={() => undefined} />)
 

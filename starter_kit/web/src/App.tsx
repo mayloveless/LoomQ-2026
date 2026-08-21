@@ -23,6 +23,7 @@ import { LearnScreen } from './Learn'
 import { ExperimentsScreen } from './Experiments'
 import { AdvancedCapabilityScreen } from './AdvancedCapability'
 import { GlobalNavigation, type AppScreen } from './Navigation'
+import { RecoveryGuidance } from './RecoveryGuidance'
 import { SCENARIOS, type Scenario } from './scenarios'
 
 export { SCENARIOS } from './scenarios'
@@ -975,6 +976,7 @@ export function ExplorerScreen({
   const [curatedGuideOpen, setCuratedGuideOpen] = useState(shouldShowCuratedGuide)
   const [storyCompleted, setStoryCompleted] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
+  const promptInputRef = useRef<HTMLTextAreaElement>(null)
 
   const steps = useMemo(() => circuitSteps(result?.events ?? []), [result])
   const warnings = useMemo(() => circuitWarnings(result?.events ?? []), [result])
@@ -1065,6 +1067,11 @@ export function ExplorerScreen({
     }
   }
 
+  function modifyExplorerInput() {
+    setError('')
+    promptInputRef.current?.focus()
+  }
+
   function selectStep(index: number) {
     setAutoPlaying(false)
     setActiveStep(index)
@@ -1140,6 +1147,7 @@ export function ExplorerScreen({
           <span className="prompt-glyph">›_</span>
           <textarea
             aria-label="描述你想探索的量子程序"
+            ref={promptInputRef}
             value={prompt}
             onChange={(event) => {
               setPrompt(event.target.value)
@@ -1154,7 +1162,18 @@ export function ExplorerScreen({
             {!loading && <kbd>⌘ ↵</kbd>}
           </button>
         </form>
-        {error && <div className="error-banner"><span>!</span>{error}</div>}
+        {error && (
+          <RecoveryGuidance
+            title="这次量子程序没有准备完成"
+            whatHappened="LoomQ 没有得到可以安全展示的实验结果。"
+            possibleReason="模型服务暂时不可用、网络连接中断，或本地验证环境尚未准备好。"
+            nextStep="可以直接重试；若仍未完成，请修改实验描述后再运行。"
+            onRetry={() => void runDebug()}
+            onModify={modifyExplorerInput}
+            retryLabel="重试运行"
+            modifyLabel="修改实验描述"
+          />
+        )}
       </section>
 
       {!result && <EmptyWorkspace loading={loading} scenario={selectedScenario} />}

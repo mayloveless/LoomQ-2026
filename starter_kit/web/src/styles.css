@@ -74,6 +74,21 @@ code, kbd { font-family: var(--mono); }
 .error-banner { max-width: 1260px; margin: 10px auto 0; padding: 9px 12px; border-radius: 4px; font-size: 12px; }
 .error-banner { color: #e7a1a7; background: rgba(224,108,117,.08); border: 1px solid rgba(224,108,117,.2); }
 .error-banner span { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 8px; border: 1px solid var(--red); border-radius: 50%; font: 11px var(--mono); }
+.recovery-guidance { max-width: 720px; margin: 14px auto 0; padding: 17px; color: #e5eaf0; border: 1px solid rgba(224,108,117,.42); border-radius: 6px; background: linear-gradient(100deg, rgba(224,108,117,.11), rgba(32,27,33,.94)); box-shadow: inset 3px 0 var(--red); }
+.recovery-guidance:focus { outline: 2px solid rgba(224,108,117,.8); outline-offset: 2px; }
+.recovery-guidance > header { display: flex; align-items: flex-start; gap: 10px; }
+.recovery-guidance > header > span { width: 24px; height: 24px; display: grid; flex: 0 0 24px; place-items: center; color: #f3b8bd; border: 1px solid currentColor; border-radius: 50%; font: 13px var(--mono); }
+.recovery-guidance small { display: block; color: #d99098; font: 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.recovery-guidance h2 { margin: 3px 0 0; color: var(--text); font-size: 17px; line-height: 1.35; }
+.recovery-guidance dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 15px 0; }
+.recovery-guidance dl > div { min-width: 0; padding: 10px; border: 1px solid rgba(235,239,244,.1); border-radius: 4px; background: rgba(12,15,19,.22); }
+.recovery-guidance dt { color: #dfa0a6; font: 10px var(--mono); letter-spacing: .06em; }
+.recovery-guidance dd { margin: 6px 0 0; color: #cbd2da; font-size: 12px; line-height: 1.55; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.recovery-actions button { min-height: 34px; padding: 0 12px; color: #effbfd; border: 1px solid #4e8f98; border-radius: 4px; background: #244950; font-size: 13px; cursor: pointer; }
+.recovery-actions button:hover { border-color: var(--cyan-bright); background: #2a5a63; }
+.recovery-actions button:last-child { color: #d8dde4; border-color: #596471; background: #20262e; }
+.recovery-actions button:last-child:hover { border-color: #8b98a5; background: #29313b; }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.75); } }
 
 .workspace { display: grid; grid-template-columns: 235px minmax(400px, .95fr) minmax(430px, 1.05fr); grid-template-rows: minmax(0, 1fr); height: calc(100vh - 242px); min-height: 450px; max-width: 1600px; margin: 0 auto; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }

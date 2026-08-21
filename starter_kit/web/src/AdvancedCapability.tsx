@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { GlobalNavigation, type AppScreen } from './Navigation'
+import { RecoveryGuidance } from './RecoveryGuidance'
 import type { TraceEvent } from './types'
 
 type AdvancedCapabilityProps = {
@@ -129,6 +130,7 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [applied, setApplied] = useState(false)
+  const goalInputRef = useRef<HTMLTextAreaElement>(null)
 
   function loadExample() {
     setGoal('生成 Bell 态并测量两个量子比特')
@@ -138,8 +140,8 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
     setApplied(false)
   }
 
-  async function submitRepair(event: FormEvent) {
-    event.preventDefault()
+  async function submitRepair(event?: FormEvent) {
+    event?.preventDefault()
     const requestGoal = goal.trim()
     const requestQasm = qasm.trim()
     if (!requestGoal || !requestQasm || loading) return
@@ -170,6 +172,11 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
     setApplied(true)
   }
 
+  function modifyRepairInput() {
+    setError('')
+    goalInputRef.current?.focus()
+  }
+
   return (
     <main className="repair-shell">
       <GlobalNavigation current="repair" onNavigate={onNavigate} />
@@ -182,7 +189,7 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
         <section className="repair-input-panel">
           <header><span>ORIGINAL</span><button type="button" onClick={loadExample} disabled={loading}>加载示例</button></header>
           <label htmlFor="repair-goal">你希望这段程序做什么？</label>
-          <textarea id="repair-goal" className="repair-goal-input" placeholder="例如：生成 Bell 态并测量两个量子比特" value={goal} onChange={(event) => { setGoal(event.target.value); setApplied(false) }} disabled={loading} />
+          <textarea id="repair-goal" ref={goalInputRef} className="repair-goal-input" placeholder="例如：生成 Bell 态并测量两个量子比特" value={goal} onChange={(event) => { setGoal(event.target.value); setApplied(false) }} disabled={loading} />
           <label htmlFor="repair-qasm">原始 OpenQASM 2.0</label>
           <textarea id="repair-qasm" className="repair-qasm-input" spellCheck={false} placeholder={'OPENQASM 2.0;\ninclude "qelib1.inc";\nqreg q[2];'} value={qasm} onChange={(event) => { setQasm(event.target.value); setApplied(false) }} disabled={loading} />
           <button className="repair-submit" type="submit" disabled={loading || !goal.trim() || !qasm.trim()}>{loading ? '正在检查…' : '检查并修复'}</button>
@@ -191,7 +198,18 @@ export function RepairWorkspace({ onNavigate }: { onNavigate: (screen: AppScreen
         <section className="repair-result-panel" aria-live="polite">
           <header><span>REPAIR RESULT</span><strong>{loading ? '正在准备修复提案' : response ? '检查完成' : '等待输入'}</strong></header>
           {loading && <div className="repair-loading"><i aria-hidden="true" /><h2>正在检查并准备修复提案</h2><p>LoomQ 会先理解目标，再让修复后的程序经过本地验证。</p></div>}
-          {!loading && error && <div className="repair-error"><b>!</b><p>{error}</p></div>}
+          {!loading && error && (
+            <RecoveryGuidance
+              title="这次检查没有完成"
+              whatHappened="LoomQ 没有得到可供你确认的修复提案。"
+              possibleReason="模型服务暂时不可用、网络连接中断，或本地验证环境尚未准备好。"
+              nextStep="可以直接重试；若问题仍然存在，请检查目标说明和 OpenQASM 后再提交。"
+              onRetry={() => void submitRepair()}
+              onModify={modifyRepairInput}
+              retryLabel="重试检查"
+              modifyLabel="修改目标和程序"
+            />
+          )}
           {!loading && !error && !response && <div className="repair-empty"><span>粘贴已有程序</span><i>→</i><span>查看修复提案</span><i>→</i><span>确认后应用</span></div>}
           {!loading && response && (
             <div className="repair-result-content">
@@ -302,9 +320,10 @@ export function BackendWorkspace({ onNavigate }: { onNavigate: (screen: AppScree
   const [response, setResponse] = useState<BackendResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const promptInputRef = useRef<HTMLTextAreaElement>(null)
 
-  async function submitBackend(event: FormEvent) {
-    event.preventDefault()
+  async function submitBackend(event?: FormEvent) {
+    event?.preventDefault()
     const requestPrompt = prompt.trim()
     if (!requestPrompt || loading) return
     setLoading(true)
@@ -326,6 +345,11 @@ export function BackendWorkspace({ onNavigate }: { onNavigate: (screen: AppScree
     }
   }
 
+  function modifyBackendInput() {
+    setError('')
+    promptInputRef.current?.focus()
+  }
+
   return (
     <main className="backend-shell">
       <GlobalNavigation current="backend" onNavigate={onNavigate} />
@@ -337,7 +361,7 @@ export function BackendWorkspace({ onNavigate }: { onNavigate: (screen: AppScree
         <section className="backend-input-panel">
           <header><span>REQUIREMENTS</span><strong>自然语言 → 标准约束</strong></header>
           <label htmlFor="backend-prompt">描述你的运行要求</label>
-          <textarea id="backend-prompt" placeholder="例如：至少 20 个 qubit，不想排队，也不想注册账号。" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={loading} />
+          <textarea id="backend-prompt" ref={promptInputRef} placeholder="例如：至少 20 个 qubit，不想排队，也不想注册账号。" value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={loading} />
           <button className="backend-submit" type="submit" disabled={loading || !prompt.trim()}>{loading ? '正在分析…' : '分析并推荐'}</button>
           <div className="backend-examples">
             <span>示例要求</span>
@@ -348,7 +372,18 @@ export function BackendWorkspace({ onNavigate }: { onNavigate: (screen: AppScree
         <section className="backend-result-panel" aria-live="polite">
           <header><span>RECOMMENDATION</span><strong>{loading ? '正在分析要求' : response ? '本地筛选完成' : '等待输入'}</strong></header>
           {loading && <div className="backend-loading"><i aria-hidden="true" /><h2>正在理解要求并筛选能力表</h2><p>请求完成后会一次性展示真实约束和本地筛选结果。</p></div>}
-          {!loading && error && <div className="repair-error"><b>!</b><p>{error}</p></div>}
+          {!loading && error && (
+            <RecoveryGuidance
+              title="这次推荐没有完成"
+              whatHappened="LoomQ 没有得到可解释的后端筛选结果。"
+              possibleReason="模型服务暂时不可用、网络连接中断，或本地能力表校验未完成。"
+              nextStep="可以直接重试；若仍未完成，请修改运行要求后再分析。"
+              onRetry={() => void submitBackend()}
+              onModify={modifyBackendInput}
+              retryLabel="重试分析"
+              modifyLabel="修改运行要求"
+            />
+          )}
           {!loading && !error && !response && <div className="backend-empty"><span>描述运行要求</span><i>→</i><span>AI 提取约束</span><i>→</i><span>本地确定性筛选</span></div>}
           {!loading && response && <BackendResults response={response} onModify={() => setResponse(null)} />}
         </section>
