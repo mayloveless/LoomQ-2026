@@ -260,36 +260,6 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         </div>
       </section>
 
-      <section className="learn-experience-path" aria-labelledby="experience-path-heading">
-        <header>
-          <span>THE LOOMQ PATH</span>
-          <h2 id="experience-path-heading">从理解到执行，一条连续的实验路径</h2>
-          <p>先看懂量子状态，再把目标变成可验证、可追踪的量子程序。</p>
-        </header>
-        <ol>
-          <li>
-            <span>01 · LEARN</span>
-            <strong>从状态变化开始理解</strong>
-            <p>用一个量子比特看懂程序每一步做了什么。</p>
-          </li>
-          <li>
-            <span>02 · EXPERIMENT</span>
-            <strong>选择现象来探索</strong>
-            <p>从纠缠、搜索或相位开始观察量子行为。</p>
-          </li>
-          <li>
-            <span>03 · CREATE</span>
-            <strong>用 AI 创建并验证</strong>
-            <p>描述目标，得到经过验证、可阅读的量子程序。</p>
-          </li>
-          <li>
-            <span>04 · EXECUTE</span>
-            <strong>沿执行过程理解结果</strong>
-            <p>查看程序步骤、状态变化和测量分布。</p>
-          </li>
-        </ol>
-      </section>
-
       {/* 三步教学只保留一套交互骨架，状态变化优先于源码。 */}
       <section
         className="learn-quickstart"

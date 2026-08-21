@@ -562,8 +562,6 @@ code, kbd { font-family: var(--mono); }
   .workspace { grid-template-columns: 205px minmax(350px, 1fr) minmax(360px, 1fr); }
   .scenario-context { grid-template-columns: 1.15fr repeat(3, 1fr); }
   .context-heading, .context-item { padding: 11px; }
-  .learn-experience-path ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .agent-run-summary ol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* Experiments 是独立实验入口，三个现象使用不同的静态微可视化。 */
@@ -823,26 +821,6 @@ code, kbd { font-family: var(--mono); }
 .learn-product-flow > div code { color: #729da4; font-size: 12px; }
 .learn-product-flow > i { display: block; height: 34px; padding: 8px 0 0 18px; color: #5f9299; font: normal 14px var(--mono); }
 .learn-product-flow > i em { margin-left: 8px; color: #796b96; font-style: normal; font-size: 11px; letter-spacing: .1em; }
-.learn-experience-path { max-width: 1200px; margin: 0 auto; padding: 0 34px 70px; }
-.learn-experience-path > header { max-width: 620px; }
-.learn-experience-path > header > span { color: #65aab3; font: 12px var(--mono); letter-spacing: .13em; }
-.learn-experience-path h2 { margin: 10px 0 8px; color: var(--text); font-size: 27px; letter-spacing: -.025em; }
-.learn-experience-path header p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
-.learn-experience-path ol { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 23px 0 0; padding: 0; list-style: none; }
-.learn-experience-path li { min-width: 0; padding: 16px; border: 1px solid #343e49; border-top: 2px solid #4f9099; border-radius: 5px; background: #181d24; }
-.learn-experience-path li > span { color: #6aa4ac; font: 10px var(--mono); letter-spacing: .07em; }
-.learn-experience-path li strong { display: block; margin-top: 10px; color: var(--text); font-size: 15px; line-height: 1.4; }
-.learn-experience-path li p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.agent-run-summary { max-width: 1600px; margin: 12px auto 0; padding: 15px 18px 16px; border: 1px solid #34414a; background: linear-gradient(100deg, rgba(88,201,216,.075), rgba(24,28,34,.98) 38%); }
-.agent-run-summary > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
-.agent-run-summary header span { color: var(--cyan); font: 10px var(--mono); letter-spacing: .1em; }
-.agent-run-summary h2 { margin: 5px 0 0; color: var(--text); font-size: 18px; }
-.agent-run-summary header small { color: var(--faint); font-size: 11px; }
-.agent-run-summary ol { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; margin: 14px 0 0; padding: 0; list-style: none; }
-.agent-run-summary li { min-width: 0; padding: 11px; border: 1px solid rgba(108,128,143,.28); border-radius: 4px; background: rgba(15,19,24,.58); }
-.agent-run-summary li > span { color: #70aab2; font: 9px var(--mono); letter-spacing: .06em; }
-.agent-run-summary li strong { display: block; margin-top: 7px; color: #dbe2e8; font-size: 13px; }
-.agent-run-summary li p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; overflow-wrap: anywhere; }
 .learn-topbar { height: 68px; display: flex; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--border); background: rgba(20,23,28,.96); }
 .learn-brand > div { display: flex; align-items: center; gap: 9px; }
 .learn-brand strong { color: #f2f5f8; font-size: 16px; }

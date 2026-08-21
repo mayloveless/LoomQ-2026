@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { AgentRunSummary, ConceptCard, CuratedWorkspace, CURATED_COMPLETIONS, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExperimentCompletion, ExplorerScreen, GenericWorkspace, nextCuratedScenarioId, SCENARIOS, ScenarioContext, shouldCelebrateCompletion } from './App'
+import { ConceptCard, CuratedWorkspace, CURATED_COMPLETIONS, DEFAULT_RESULT_AUTOPLAY, EmptyWorkspace, ExperimentCompletion, ExplorerScreen, GenericWorkspace, nextCuratedScenarioId, SCENARIOS, ScenarioContext, shouldCelebrateCompletion } from './App'
 import { ExperimentStory } from './ExperimentStory'
 import type { ExperimentStoryModel } from './storyModel'
 import type { StateEntry, TraceEvent } from './types'
@@ -30,33 +30,6 @@ describe('Just-in-time concept card', () => {
         }}
       />,
     )).toBe('')
-  })
-})
-
-describe('Agent result narrative', () => {
-  it('organizes existing trace data from goal through local execution tracking', () => {
-    const markup = renderToStaticMarkup(
-      <AgentRunSummary
-        goal="制备 Bell 态并测量"
-        qasm={'OPENQASM 2.0;\nqreg q[2];'}
-        events={[
-          { seq: 1, layer: 'agent', stage: 'intent', executor: 'llm', status: 'ok', summary: '识别为 Bell 态制备任务。', data: {} },
-          { seq: 2, layer: 'agent', stage: 'parser_validation', executor: 'local', status: 'ok', summary: 'ok', data: {} },
-          { seq: 3, layer: 'agent', stage: 'semantic_verification', executor: 'local', status: 'ok', summary: 'ok', data: { fidelity: 0.998 } },
-        ]}
-        steps={[
-          { seq: 4, layer: 'circuit', stage: 'gate_step', executor: 'local', status: 'ok', summary: 'H', data: {} },
-          { seq: 5, layer: 'circuit', stage: 'measurement', executor: 'local', status: 'ok', summary: 'measure', data: {} },
-        ]}
-      />,
-    )
-
-    for (const label of ['用户目标', 'AI 理解与计划', '生成的量子程序', '验证结果', '本地执行追踪']) {
-      expect(markup).toContain(label)
-    }
-    expect(markup).toContain('识别为 Bell 态制备任务。')
-    expect(markup).toContain('Fidelity 0.998')
-    expect(markup).toContain('已追踪 2 个程序步骤，包含测量读出。')
   })
 })
 
