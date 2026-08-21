@@ -1,6 +1,8 @@
 """Task 11A tests for the one-shot L2 QASM generation pipeline."""
 
 import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -386,6 +388,56 @@ creg c[1];"""
             with self.assertRaisesRegex(RuntimeError, "semantic verification") as caught:
                 agent_chat("生成 Bell 电路")
         self.assertNotIn(test_key, str(caught.exception))
+
+
+class L2FailureDebugTraceTests(unittest.TestCase):
+    def test_final_failure_writes_parsed_verification_trace_without_secret(self):
+        secret = "sk-debug-secret-value"
+        responses = [
+            completion(generation_json(qasm=BELL_QASM, explanation="raw %s" % secret)),
+            completion(target_json(qubit_count=2)),
+            completion(generation_json(qasm=BELL_QASM, task_type="repair_qasm")),
+        ]
+        verification_failure = SemanticVerificationResult(
+            fidelity=0.5, passed=False, mode="statevector"
+        )
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "loomq.l2_agent.L2_DEBUG_OUTPUT", Path(directory)
+        ), mock.patch(
+            "loomq.l2_agent.llm_client.chat_completion", side_effect=responses
+        ), mock.patch(
+            "loomq.l2_agent.verify_semantics",
+            side_effect=[verification_failure, verification_failure],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "semantic verification"):
+                agent_chat("生成 Bell 电路，备注 %s" % secret)
+            files = list(Path(directory).glob("l2-failure-*.json"))
+            self.assertEqual(1, len(files))
+            payload = json.loads(files[0].read_text(encoding="utf-8"))
+
+        self.assertEqual(BELL_QASM, payload["first_candidate_qasm"])
+        self.assertEqual(BELL_QASM, payload["repair_candidate_qasm"])
+        self.assertEqual("statevector", payload["target_spec"]["verification_mode"])
+        self.assertIn("fidelity 0.500000", payload["first_verification_diagnostic"])
+        self.assertIn("fidelity 0.500000", payload["second_verification_diagnostic"])
+        self.assertEqual({"first": 0.5, "second": 0.5}, payload["fidelity_result"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn(secret, serialized)
+        self.assertIn("[REDACTED]", serialized)
+        self.assertNotIn("raw %s" % secret, serialized)
+
+    def test_success_does_not_write_debug_trace(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "loomq.l2_agent.L2_DEBUG_OUTPUT", Path(directory)
+        ), mock.patch(
+            "loomq.l2_agent.llm_client.chat_completion",
+            side_effect=[completion(generation_json(qasm=BELL_QASM)), completion(target_json(2))],
+        ), mock.patch(
+            "loomq.l2_agent.verify_semantics",
+            return_value=SemanticVerificationResult(1.0, True, "statevector"),
+        ):
+            agent_chat("生成 Bell 电路")
+            self.assertEqual([], list(Path(directory).glob("l2-failure-*.json")))
 
 
 if __name__ == "__main__":

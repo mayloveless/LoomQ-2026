@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
+from pathlib import Path
 import re
 import time
 from typing import Any, Mapping
@@ -43,6 +45,13 @@ z 门不受支持，绝对不要输出 z；需要等价的 Z 相位时使用连�
 
 # 正式评测每 case 为 120 秒；内部预留 5 秒给异常归一化和进程回收。
 CASE_DEADLINE_SECONDS = 115.0
+# 开发期失败诊断与正式 evidence 分离，绝不作为比赛证据写入。
+L2_DEBUG_OUTPUT = Path(__file__).resolve().parents[1] / "runtime" / "l2-debug"
+_SENSITIVE_TEXT_RE = re.compile(
+    r"(?i)(?:bearer\s+|\bsk-)[A-Za-z0-9._~+/=-]{8,}"
+    r"|(?:api[_-]?key|token)\s*[=:]\s*[^\s,;]+"
+    r"|\b[a-f0-9]{32,}\b"
+)
 
 TARGET_JUDGE_SYSTEM_PROMPT = """你是独立的量子目标态规格提取器，只能依据用户原始请求判断目标，不能查看或猜测候选 QASM。
 只返回一个 JSON 对象，不返回额外散文，也绝对不要返回 QASM。
@@ -113,6 +122,71 @@ class _CandidateVerificationError(RuntimeError):
         super().__init__("candidate QASM failed local verification")
         self.diagnostic = diagnostic
         self.fidelity = fidelity
+
+
+@dataclass
+class _FailureDebugTrace:
+    """只保存已解析的安全字段，绝不保留 HTTP 或模型原始响应。"""
+
+    user_request: str
+    failure_stage: str = "initial"
+    first_candidate_qasm: str | None = None
+    repair_candidate_qasm: str | None = None
+    target_spec: Mapping[str, Any] | None = None
+    first_diagnostic: str | None = None
+    second_diagnostic: str | None = None
+    first_fidelity: float | None = None
+    second_fidelity: float | None = None
+
+
+def _redact_sensitive_text(value: str) -> str:
+    """避免用户请求或 QASM 注释意外将凭据写入本地诊断文件。"""
+    return _SENSITIVE_TEXT_RE.sub("[REDACTED]", value)
+
+
+def _safe_debug_value(value: Any) -> Any:
+    """递归清理将要落盘的已解析字段。"""
+    if isinstance(value, str):
+        return _redact_sensitive_text(value)
+    if isinstance(value, Mapping):
+        return {str(key): _safe_debug_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_debug_value(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return "[UNSUPPORTED DEBUG VALUE]"
+
+
+def _write_failure_debug_trace(trace: _FailureDebugTrace) -> None:
+    """最终失败时最佳努力写入诊断；写入失败绝不改变 Agent 的异常。"""
+    payload = {
+        "schema_version": 1,
+        "recorded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "user_request": _redact_sensitive_text(trace.user_request),
+        "failure_stage": trace.failure_stage,
+        "first_candidate_qasm": _safe_debug_value(trace.first_candidate_qasm),
+        "repair_candidate_qasm": _safe_debug_value(trace.repair_candidate_qasm),
+        "target_spec": _safe_debug_value(trace.target_spec),
+        "first_verification_diagnostic": _safe_debug_value(trace.first_diagnostic),
+        "second_verification_diagnostic": _safe_debug_value(trace.second_diagnostic),
+        "fidelity_result": {
+            "first": trace.first_fidelity,
+            "second": trace.second_fidelity,
+        },
+    }
+    try:
+        L2_DEBUG_OUTPUT.mkdir(parents=True, exist_ok=True)
+        filename = "l2-failure-%s-%d.json" % (
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"),
+            time.time_ns(),
+        )
+        (L2_DEBUG_OUTPUT / filename).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        # 诊断目录权限或磁盘问题不能掩盖原始 Agent 失败。
+        return
 
 
 def _trace(
@@ -485,6 +559,22 @@ def _repair_prompt(
 
 
 def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
+    """运行 Agent；仅在最终失败时落盘已解析的安全诊断。"""
+    failure_debug = _FailureDebugTrace(
+        user_request=prompt if isinstance(prompt, str) else "[NON_STRING REQUEST]"
+    )
+    try:
+        return _run_agent_impl(prompt, trace_sink, failure_debug)
+    except Exception:
+        _write_failure_debug_trace(failure_debug)
+        raise
+
+
+def _run_agent_impl(
+    prompt: str,
+    trace_sink: TraceRecorder | None,
+    failure_debug: _FailureDebugTrace,
+) -> str:
     """Run the production L2 path with an optional additive trace observer."""
     if not isinstance(prompt, str) or not prompt.strip():
         raise RuntimeError("L2 prompt must be a non-empty string")
@@ -551,6 +641,8 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
 
     require_measurement = _requires_measurement(prompt)
     candidate = _parse_candidate_payload(payload)
+    failure_debug.first_candidate_qasm = candidate.qasm
+    failure_debug.failure_stage = "target_specification"
     pure_state_guard = requires_statevector_verification(prompt)
     _trace(
         trace_sink,
@@ -573,6 +665,8 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
     target = _parse_target_judge_response(
         _call_model(judge_messages, deadline=deadline)
     )
+    failure_debug.target_spec = target.as_prompt_payload()
+    failure_debug.failure_stage = "first_verification"
     target_trace_data = target.as_prompt_payload()
     # 模型 explanation 不参与裁判，也不进入安全调试协议。
     target_trace_data.pop("explanation", None)
@@ -597,6 +691,9 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
             trace_sink=trace_sink,
         )
     except _CandidateVerificationError as first_error:
+        failure_debug.first_diagnostic = first_error.diagnostic
+        failure_debug.first_fidelity = first_error.fidelity
+        failure_debug.failure_stage = "repair_generation"
         repair_triggered = True
         _trace(
             trace_sink,
@@ -626,6 +723,8 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
         ]
         repair_response = _call_model(repair_messages, deadline=deadline)
         repaired_candidate = _parse_candidate_response(repair_response)
+        failure_debug.repair_candidate_qasm = repaired_candidate.qasm
+        failure_debug.failure_stage = "second_verification"
         _trace(
             trace_sink,
             stage="repair_candidate",
@@ -645,7 +744,9 @@ def _run_agent(prompt: str, trace_sink: TraceRecorder | None = None) -> str:
                 require_measurement=require_measurement,
                 trace_sink=trace_sink,
             )
-        except _CandidateVerificationError:
+        except _CandidateVerificationError as second_error:
+            failure_debug.second_diagnostic = second_error.diagnostic
+            failure_debug.second_fidelity = second_error.fidelity
             raise RuntimeError(
                 "model repair failed QASM semantic verification; repair limit reached"
             ) from None

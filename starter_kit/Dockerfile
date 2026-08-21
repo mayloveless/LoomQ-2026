@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /workspace/submission
 
-COPY requirements.txt requirements-spinq.txt requirements-originq.txt ./
+COPY requirements.txt requirements-spinq.txt requirements-spinq-cloud.txt requirements-originq.txt ./
 
 # pyQPanda 的 manylinux wheel 在 slim 镜像中仍需要 libcurl.so.4。
 # 默认使用国内 HTTPS 镜像；构建参数仍可切回官方源，并保留有限重试。
@@ -34,6 +34,14 @@ RUN pip install --no-cache-dir \
        --index-url "${PYPI_INDEX_URL}" \
        --timeout 300 --retries 10 \
        -r requirements.txt
+
+# Web 的 SpinQ 真机 API 由主解释器运行；安装官方 Cloud SDK 与 L2 Braket verifier 共用此环境。
+# 账号、私钥和真机后端仅在 docker run 时通过环境变量/挂载提供，绝不进入镜像层。
+RUN pip install --no-cache-dir \
+       --index-url "${PYPI_INDEX_URL}" \
+       --timeout 300 --retries 10 \
+       -r requirements-spinq-cloud.txt \
+    && python -c "import braket; import spinqit_mcp_tools; from Crypto.PublicKey import RSA"
 
 # SpinQit 与 Braket 依赖不同 ANTLR 版本，使用独立虚拟环境。
 # SpinQit 未区分 CPU/GPU 的 torch 依赖；评测只使用本地模拟器，直接安装官方 CPU wheel，避免 CUDA/cuDNN/Triton 和额外索引解析问题。
