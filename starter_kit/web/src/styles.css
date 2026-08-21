@@ -338,13 +338,23 @@ code, kbd { font-family: var(--mono); }
 .experiment-completion h2 { margin: 0; color: var(--text); font-size: 25px; line-height: 1.35; }
 .completion-recap { margin: 18px 0 0; color: #dec27d; font: 14px var(--mono); line-height: 1.6; }
 .completion-summary { max-width: 560px; margin: 16px 0 0; color: var(--muted); font-size: 16px; line-height: 1.75; }
+.completion-takeaway { width: min(690px, 100%); margin-top: 25px; padding: 16px; border: 1px solid #34414a; border-left: 2px solid #5ca8b2; border-radius: 5px; background: rgba(20,26,32,.75); text-align: left; }
+.completion-takeaway header { display: flex; align-items: baseline; gap: 10px; }
+.completion-takeaway header > span { color: var(--cyan); font: 10px var(--mono); letter-spacing: .1em; }
+.completion-takeaway h3 { margin: 0; color: var(--text); font-size: 16px; }
+.completion-takeaway dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0 0; }
+.completion-takeaway dl > div { min-width: 0; }
+.completion-takeaway dt { color: #77aeb6; font: 10px var(--mono); letter-spacing: .05em; }
+.completion-takeaway dd { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .completion-next { width: min(560px, 100%); margin-top: 31px; padding-top: 23px; border-top: 1px solid var(--border); }
 .completion-next p { margin: 0 0 15px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .completion-primary { min-height: 42px; padding: 0 19px; color: #f3fdff; border: 1px solid #5ca8b2; border-radius: 4px; background: #356f78; font-size: 15px; font-weight: 700; cursor: pointer; }
 .completion-primary:hover { background: #3e7e88; }
-.completion-actions { display: flex; align-items: center; justify-content: center; gap: 24px; margin-top: 22px; }
-.completion-actions button { padding: 5px 0; color: var(--muted); border: 0; border-bottom: 1px solid transparent; background: transparent; font-size: 13px; cursor: pointer; }
-.completion-actions button:hover { color: var(--text); border-bottom-color: var(--faint); }
+.completion-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px; margin-top: 22px; }
+.completion-actions button { min-height: 34px; padding: 0 10px; color: #bddde1; border: 1px solid #3f6970; border-radius: 4px; background: #18272c; font-size: 13px; cursor: pointer; }
+.completion-actions button::after { content: ' ↗'; color: var(--cyan-bright); font: 12px var(--mono); }
+.completion-actions button:hover { color: #f1fdff; border-color: #61aab3; background: #244147; }
+.completion-actions button:focus-visible { outline: 2px solid var(--cyan-bright); outline-offset: 2px; }
 .completion-confetti { position: absolute; inset: 0; pointer-events: none; }
 .completion-confetti i { position: absolute; top: 35%; left: 50%; width: 5px; height: 11px; border-radius: 1px; background: var(--cyan-bright); opacity: 0; animation: completion-confetti .8s cubic-bezier(.16,.72,.28,1) both; }
 .completion-confetti i:nth-child(2n) { background: #dec27d; }
@@ -562,6 +572,7 @@ code, kbd { font-family: var(--mono); }
   .workspace { grid-template-columns: 205px minmax(350px, 1fr) minmax(360px, 1fr); }
   .scenario-context { grid-template-columns: 1.15fr repeat(3, 1fr); }
   .context-heading, .context-item { padding: 11px; }
+  .completion-takeaway dl { grid-template-columns: 1fr; gap: 10px; }
 }
 
 /* Experiments 是独立实验入口，三个现象使用不同的静态微可视化。 */

@@ -232,6 +232,9 @@ describe('Task 13R curated experiment completion', () => {
     expect(markup).toContain('叠加 → 建立关联 → 测量')
     expect(markup).toContain('需要整体描述的联合状态')
     expect(markup).toContain('继续看 Grover 搜索 →')
+    expect(markup).toContain('你学到了什么？')
+    expect(markup).toContain('两个量子位的读出彼此关联')
+    expect(markup).toContain('纠缠：多个量子位需要作为一个整体状态来理解。')
   })
 
   it('uses the required Grover completion summary and Phase recommendation', () => {
@@ -263,10 +266,12 @@ describe('Task 13R curated experiment completion', () => {
     expect(phase?.prompt).toBe('生成一个带相对相位的 Bell- 态，不要求测量')
   })
 
-  it('always provides a route back to the experiment list and the last stage', () => {
+  it('provides follow-up routes to modify, explore, inspect implementation, and return', () => {
     const markup = completionMarkup('bell')
     expect(markup).toContain('返回实验列表')
-    expect(markup).toContain('返回最后阶段')
+    expect(markup).toContain('修改当前实验 / 参数')
+    expect(markup).toContain('自由探索（Agent）')
+    expect(markup).toContain('查看程序实现（Advanced）')
   })
 
   it('renders the one-shot decoration only while celebration is active', () => {

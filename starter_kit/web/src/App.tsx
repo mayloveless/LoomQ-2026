@@ -41,6 +41,11 @@ type CuratedCompletionCopy = {
   title: string
   recap: string
   summary: string
+  takeaway: {
+    phenomenon: string
+    concept: string
+    importance: string
+  }
   nextIntro: string
   nextLabel: string
   nextScenarioId: CuratedScenarioId | null
@@ -51,6 +56,11 @@ export const CURATED_COMPLETIONS: Record<CuratedScenarioId, CuratedCompletionCop
     title: '✓ 你已经完成 Bell 实验',
     recap: '叠加 → 建立关联 → 测量',
     summary: '你看到两个量子位不再只能分别理解，而会形成一个需要整体描述的联合状态。',
+    takeaway: {
+      phenomenon: '两个量子位的读出彼此关联，而不是各自独立地给出结果。',
+      concept: '纠缠：多个量子位需要作为一个整体状态来理解。',
+      importance: '这种整体关联是量子计算能表达普通独立 bit 难以表达关系的基础。',
+    },
     nextIntro: '接下来看看：这种量子状态变化怎样真正参与一次算法。',
     nextLabel: '继续看 Grover 搜索 →',
     nextScenarioId: 'search',
@@ -59,6 +69,11 @@ export const CURATED_COMPLETIONS: Record<CuratedScenarioId, CuratedCompletionCop
     title: '✓ 你已经完成 Grover 搜索实验',
     recap: '准备候选 → 翻转目标方向 → 干涉增强 → 测量',
     summary: '你看到量子搜索不是逐项返回答案，而是先留下方向差异，再通过干涉把它变成测量优势。',
+    takeaway: {
+      phenomenon: '目标分支没有被直接“找出”，而是在后续步骤中变得更容易被测量到。',
+      concept: '干涉：不同分支的方向关系会相互增强或抵消。',
+      importance: '它说明量子算法的优势来自安排状态如何组合，而不只是同时尝试更多候选。',
+    },
     nextIntro: '刚才真正起作用的关键之一，是“相位”。接下来单独看看它。',
     nextLabel: '继续看相位实验 →',
     nextScenarioId: 'phase',
@@ -67,6 +82,11 @@ export const CURATED_COMPLETIONS: Record<CuratedScenarioId, CuratedCompletionCop
     title: '✓ 你已经完成相位实验',
     recap: '概率相同 → 改变方向关系 → 后续行为可能不同',
     summary: '你看到“当前测量概率一样”并不等于“量子状态一样”，相对相位会影响之后的干涉。',
+    takeaway: {
+      phenomenon: '两个状态当前的测量概率相同，但它们在之后的操作中会表现不同。',
+      concept: '相对相位：分支之间的方向关系是量子状态的一部分。',
+      importance: '它提醒你不要只看概率；相位决定了后续能否形成有用的干涉。',
+    },
     nextIntro: '三个正式实验已经看完，现在可以自己描述一个量子程序。',
     nextLabel: '开始自由探索 →',
     nextScenarioId: null,
@@ -726,12 +746,16 @@ export function ExperimentCompletion({
   scenarioId,
   celebrating,
   onReturnToStory,
+  onModifyExperiment = () => undefined,
+  onFreeExplore = () => undefined,
   onContinue,
   onBackToExperiments,
 }: {
   scenarioId: CuratedScenarioId
   celebrating: boolean
   onReturnToStory: () => void
+  onModifyExperiment?: () => void
+  onFreeExplore?: () => void
   onContinue: () => void
   onBackToExperiments: () => void
 }) {
@@ -749,12 +773,22 @@ export function ExperimentCompletion({
       <h2>{completion.title}</h2>
       <p className="completion-recap">{completion.recap}</p>
       <p className="completion-summary">{completion.summary}</p>
+      <section className="completion-takeaway" aria-labelledby="completion-takeaway-heading">
+        <header><span>TAKEAWAY</span><h3 id="completion-takeaway-heading">你学到了什么？</h3></header>
+        <dl>
+          <div><dt>观察到的现象</dt><dd>{completion.takeaway.phenomenon}</dd></div>
+          <div><dt>对应量子概念</dt><dd>{completion.takeaway.concept}</dd></div>
+          <div><dt>为什么重要</dt><dd>{completion.takeaway.importance}</dd></div>
+        </dl>
+      </section>
       <div className="completion-next">
         <p>{completion.nextIntro}</p>
         <button className="completion-primary" onClick={onContinue}>{completion.nextLabel}</button>
       </div>
       <nav className="completion-actions" aria-label="实验完成后的操作">
-        <button onClick={onReturnToStory}>← 返回最后阶段</button>
+        <button onClick={onModifyExperiment}>修改当前实验 / 参数</button>
+        <button onClick={onFreeExplore}>自由探索（Agent）</button>
+        <button onClick={onReturnToStory}>查看程序实现（Advanced）</button>
         <button onClick={onBackToExperiments}>返回实验列表</button>
       </nav>
     </section>
@@ -779,6 +813,8 @@ export function CuratedWorkspace({
   onOpenGuide,
   onComplete,
   onReturnToStory,
+  onModifyExperiment,
+  onFreeExplore,
   onContinue,
   onBackToExperiments,
 }: {
@@ -799,6 +835,8 @@ export function CuratedWorkspace({
   onOpenGuide: () => void
   onComplete: () => void
   onReturnToStory: () => void
+  onModifyExperiment?: () => void
+  onFreeExplore?: () => void
   onContinue: () => void
   onBackToExperiments: () => void
 }) {
@@ -837,6 +875,8 @@ export function CuratedWorkspace({
             scenarioId={story.scenarioId}
             celebrating={celebrating}
             onReturnToStory={onReturnToStory}
+            onModifyExperiment={onModifyExperiment}
+            onFreeExplore={onFreeExplore}
             onContinue={onContinue}
             onBackToExperiments={onBackToExperiments}
           />
@@ -1110,6 +1150,24 @@ export function ExplorerScreen({
     onSelectExperiment(nextCuratedScenarioId(experimentStory.scenarioId))
   }
 
+  function modifyCurrentExperiment() {
+    // 回到已有输入区保留当前目标，用户可以直接改写描述后重新运行。
+    setResult(null)
+    setResultPrompt('')
+    setActiveStep(0)
+    setActiveStoryStage(0)
+    setAutoPlaying(false)
+    setStoryCompleted(false)
+    setCelebrating(false)
+    promptInputRef.current?.focus()
+  }
+
+  function startFreeExplore() {
+    modifyCurrentExperiment()
+    setSelectedScenarioId(null)
+    setPrompt('')
+  }
+
   function toggleAutoPlayback() {
     if (autoPlaying) {
       setAutoPlaying(false)
@@ -1208,7 +1266,10 @@ export function ExplorerScreen({
           onReturnToStory={() => {
             setStoryCompleted(false)
             setCelebrating(false)
+            setCuratedQasmOpen(true)
           }}
+          onModifyExperiment={modifyCurrentExperiment}
+          onFreeExplore={startFreeExplore}
           onContinue={continueExperiment}
           onBackToExperiments={() => onNavigate('experiments')}
         />
