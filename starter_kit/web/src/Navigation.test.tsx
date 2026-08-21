@@ -32,16 +32,25 @@ describe('Task 13G-2 global navigation', () => {
     const markup = renderToStaticMarkup(<GlobalNavigation current="experiments" onNavigate={() => undefined} />)
 
     for (const [number, label] of [
-      ['01', 'Learn'],
-      ['02', 'Experiments'],
-      ['03', 'Explorer'],
-      ['04', 'Repair'],
-      ['05', 'Backend'],
+      ['01', '认识量子'],
+      ['02', '探索实验'],
+      ['03', '自由探索'],
+      ['04', '程序修复'],
+      ['05', '执行平台'],
     ]) {
       expect(markup).toContain(`<span>${number}</span><strong>${label}</strong>`)
     }
-    expect(markup.match(/>进阶<\/em>/g)).toHaveLength(2)
+    expect(markup).not.toContain('进阶')
     expect(markup).toContain('class="active" aria-current="page"')
+    for (const tooltip of [
+      '从量子比特和量子门开始，理解量子计算基础概念',
+      '通过经典量子实验，观察量子程序如何运行',
+      '自由探索量子程序，使用 AI 创建和验证实验',
+      '分析并修复已有量子程序的问题',
+      '查看量子程序支持的执行平台和运行环境',
+    ]) {
+      expect(markup).toContain(`title="${tooltip}"`)
+    }
   })
 
   it('renders Repair and Backend as real workspaces without fake execution controls', () => {
