@@ -498,6 +498,72 @@ function SidebarProcess({ events }: { events: TraceEvent[] }) {
   )
 }
 
+function latestAgentStage(events: TraceEvent[], stage: string): TraceEvent | undefined {
+  return [...events].reverse().find((event) => event.stage === stage)
+}
+
+function traceStatusCopy(event: TraceEvent | undefined, success: string, pending: string): string {
+  if (!event) return pending
+  return event.status === 'ok' ? success : event.summary || pending
+}
+
+export function AgentRunSummary({
+  goal,
+  events,
+  qasm,
+  steps,
+}: {
+  goal: string
+  events: TraceEvent[]
+  qasm: string
+  steps: TraceEvent[]
+}) {
+  const intent = latestAgentStage(events, 'intent')
+  const parser = latestAgentStage(events, 'parser_validation')
+  const semantic = latestAgentStage(events, 'semantic_verification')
+  const executableSteps = steps.filter((step) => step.stage !== 'initial_state')
+  const hasMeasurement = executableSteps.some((step) => step.stage === 'measurement')
+  const fidelity = typeof semantic?.data.fidelity === 'number'
+    ? ` · Fidelity ${semantic.data.fidelity.toFixed(3)}`
+    : ''
+
+  return (
+    <section className="agent-run-summary" aria-label="本次量子实验路径">
+      <header>
+        <div><span>AI-NATIVE EXPERIMENT</span><h2>本次实验如何从目标走到结果</h2></div>
+        <small>所有结论来自本次真实 trace</small>
+      </header>
+      <ol>
+        <li>
+          <span>01 · GOAL</span>
+          <strong>用户目标</strong>
+          <p>{goal}</p>
+        </li>
+        <li>
+          <span>02 · PLAN</span>
+          <strong>AI 理解与计划</strong>
+          <p>{intent?.summary || '已根据你的描述开始规划量子程序。'}</p>
+        </li>
+        <li>
+          <span>03 · PROGRAM</span>
+          <strong>生成的量子程序</strong>
+          <p>{qasm ? '已生成 OpenQASM；可在下方电路与源码中查看。' : '本次没有可展示的 OpenQASM。'}</p>
+        </li>
+        <li>
+          <span>04 · VERIFY</span>
+          <strong>验证结果</strong>
+          <p>{traceStatusCopy(parser, '语法与结构校验通过。', '未记录语法校验结果。')} {traceStatusCopy(semantic, '语义验证通过。', '未记录语义验证结果。')}{fidelity}</p>
+        </li>
+        <li>
+          <span>05 · EXECUTE</span>
+          <strong>本地执行追踪</strong>
+          <p>{executableSteps.length ? `已追踪 ${executableSteps.length} 个程序步骤${hasMeasurement ? '，包含测量读出。' : '。'}` : '没有可展示的执行步骤。'}</p>
+        </li>
+      </ol>
+    </section>
+  )
+}
+
 function BackendResult({ events, reply }: { events: TraceEvent[]; reply: string }) {
   const ids = latestBackendIds(events)
   const constraintEvent = events.find((event) => event.stage === 'backend_constraints')
@@ -1177,6 +1243,15 @@ export function ExplorerScreen({
       </section>
 
       {!result && <EmptyWorkspace loading={loading} scenario={selectedScenario} />}
+
+      {result && !backendMode && (
+        <AgentRunSummary
+          goal={resultPrompt}
+          events={agents}
+          qasm={qasm}
+          steps={steps}
+        />
+      )}
 
       {result && backendMode && (
         <div className="backend-layout">
