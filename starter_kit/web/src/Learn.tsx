@@ -1,4 +1,4 @@
-import { useState, type FocusEvent, type ReactNode } from "react";
+import { useEffect, useState, type FocusEvent, type ReactNode } from "react";
 import { GlobalNavigation, type AppScreen } from "./Navigation";
 
 type LearnScreenProps = {
@@ -167,10 +167,208 @@ function LearnStateVisual({ step }: { step: LearnStepId }) {
   );
 }
 
+type RealHardwareCapability = {
+  spinq: {
+    available: boolean;
+    reason: string;
+  };
+};
+
+type RealHardwareJob = {
+  job_id: string;
+  status: "submitted" | "running" | "completed" | "failed";
+  platform: "spinq";
+  result: Record<string, unknown>;
+};
+
+const REAL_HARDWARE_POLL_MS = 5000;
+
+function realResultEntries(result: Record<string, unknown>) {
+  const probabilities = result.probabilities;
+  if (!probabilities || typeof probabilities !== "object" || Array.isArray(probabilities)) {
+    return [];
+  }
+  return Object.entries(probabilities)
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+    .sort(([left], [right]) => left.localeCompare(right));
+}
+
+type RealHardwareModalProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+// 真机体验仅使用既有 API；它不参与 Explorer 的模拟实验状态。
+function RealHardwareModal({ open, onClose }: RealHardwareModalProps) {
+  const [capability, setCapability] = useState<RealHardwareCapability | null>(null);
+  const [capabilityError, setCapabilityError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(false);
+  const [job, setJob] = useState<RealHardwareJob | null>(null);
+  const [pollError, setPollError] = useState(false);
+  const [pollAttempt, setPollAttempt] = useState(0);
+
+  const loadCapability = async () => {
+    setCapabilityError(false);
+    setCapability(null);
+    try {
+      const response = await fetch("/api/real-hardware/status");
+      if (!response.ok) throw new Error("status unavailable");
+      const payload = (await response.json()) as RealHardwareCapability;
+      if (!payload.spinq || typeof payload.spinq.available !== "boolean") {
+        throw new Error("invalid status payload");
+      }
+      setCapability(payload);
+    } catch {
+      setCapabilityError(true);
+    }
+  };
+
+  useEffect(() => {
+    if (open) void loadCapability();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !job || (job.status !== "submitted" && job.status !== "running")) {
+      return undefined;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      setPollError(false);
+      try {
+        const response = await fetch(`/api/real-hardware/status/${encodeURIComponent(job.job_id)}`);
+        if (!response.ok) throw new Error("job status unavailable");
+        const payload = (await response.json()) as Omit<RealHardwareJob, "platform">;
+        if (!payload.job_id || !["running", "completed", "failed"].includes(payload.status)) {
+          throw new Error("invalid job payload");
+        }
+        if (!cancelled) {
+          setJob({ ...payload, platform: "spinq" });
+          if (payload.status === "running") timer = setTimeout(() => void poll(), REAL_HARDWARE_POLL_MS);
+        }
+      } catch {
+        if (!cancelled) setPollError(true);
+      }
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [job?.job_id, job?.status, open, pollAttempt]);
+
+  const startExperiment = async () => {
+    setSubmitting(true);
+    setSubmitError(false);
+    try {
+      const response = await fetch("/api/real-hardware/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ circuit: "bell", platform: "spinq" }),
+      });
+      if (!response.ok) throw new Error("submission failed");
+      const payload = (await response.json()) as Omit<RealHardwareJob, "result">;
+      if (!payload.job_id || payload.status !== "submitted" || payload.platform !== "spinq") {
+        throw new Error("invalid submission payload");
+      }
+      setJob({ ...payload, result: {} });
+    } catch {
+      setSubmitError(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) return null;
+  const entries = job ? realResultEntries(job.result) : [];
+
+  return (
+    <div className="real-hardware-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="real-hardware-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="real-hardware-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button className="real-hardware-close" type="button" onClick={onClose} aria-label="关闭真实量子计算体验">×</button>
+        <span>REAL HARDWARE · OPTIONAL EXPERIENCE</span>
+        <h2 id="real-hardware-title">让你的第一个量子程序运行在真实量子芯片上</h2>
+
+        {capabilityError && (
+          <div className="real-hardware-message is-error" role="alert">
+            <strong>暂时无法连接真实量子设备。</strong>
+            <p>请检查网络后重试；你仍可以继续使用模拟实验。</p>
+            <button type="button" onClick={() => void loadCapability()}>重新检查</button>
+          </div>
+        )}
+
+        {!capability && !capabilityError && <p className="real-hardware-loading">正在检查真实量子设备连接…</p>}
+
+        {capability && !capability.spinq.available && (
+          <div className="real-hardware-message">
+            <strong>真实量子实验需要连接 SpinQ Cloud。</strong>
+            <p>当前运行环境未配置真实量子设备。你仍可以继续使用模拟实验。</p>
+          </div>
+        )}
+
+        {capability?.spinq.available && !job && (
+          <div className="real-hardware-ready">
+            <dl>
+              <div><dt>实验</dt><dd>Bell State</dd></div>
+              <div><dt>设备</dt><dd>SpinQ Cloud</dd></div>
+            </dl>
+            <p>该实验将在真实量子芯片执行，完成时间取决于设备队列。</p>
+            {submitError && <p className="real-hardware-inline-error" role="alert">提交没有完成。请检查网络后重试。</p>}
+            <button className="learn-primary" type="button" onClick={() => void startExperiment()} disabled={submitting}>
+              {submitting ? "正在提交…" : "开始运行"}
+            </button>
+          </div>
+        )}
+
+        {job && (job.status === "submitted" || job.status === "running") && (
+          <div className="real-hardware-waiting" aria-live="polite">
+            <strong>任务已提交</strong>
+            <p>Job ID: <code>{job.job_id}</code></p>
+            <p>正在等待真实量子设备执行…</p>
+            {pollError && <button type="button" onClick={() => setPollAttempt((value) => value + 1)}>重新查询</button>}
+          </div>
+        )}
+
+        {job?.status === "completed" && (
+          <div className="real-hardware-result" aria-live="polite">
+            <strong>这是来自真实量子设备的运行结果</strong>
+            <p>Job ID: <code>{job.job_id}</code> · 平台 SpinQ · 执行完成</p>
+            {entries.length ? (
+              <div className="real-hardware-probabilities" aria-label="真实设备测量结果">
+                {entries.map(([basis, probability]) => (
+                  <div key={basis}>
+                    <code>{basis}</code><i><b style={{ width: `${Math.max(0, Math.min(100, probability * 100))}%` }} /></i><strong>{(probability * 100).toFixed(1)}%</strong>
+                  </div>
+                ))}
+              </div>
+            ) : <p>任务已完成，平台返回的原始结果已保存。</p>}
+          </div>
+        )}
+
+        {job?.status === "failed" && (
+          <div className="real-hardware-message is-error" role="alert">
+            <strong>真实量子设备未能完成该任务。</strong>
+            <p>你可以稍后重试；这不会影响模拟实验。</p>
+            <button type="button" onClick={() => setJob(null)}>重新开始</button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
   const [activeStepId, setActiveStepId] = useState<LearnStepId>("prepare");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourcePinned, setSourcePinned] = useState(false);
+  const [realHardwareOpen, setRealHardwareOpen] = useState(false);
   const activeStep =
     LEARN_STEPS.find((step) => step.id === activeStepId) ?? LEARN_STEPS[0];
 
@@ -459,7 +657,11 @@ export function LearnScreen({ onStart, onNavigate }: LearnScreenProps) {
         <button className="learn-primary" onClick={onStart}>
           选择一个量子实验 <span>→</span>
         </button>
+        <button className="learn-real-hardware-entry" type="button" onClick={() => setRealHardwareOpen(true)}>
+          🚀 体验真实量子计算
+        </button>
       </section>
+      <RealHardwareModal open={realHardwareOpen} onClose={() => setRealHardwareOpen(false)} />
     </main>
   );
 }

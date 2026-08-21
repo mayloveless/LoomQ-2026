@@ -9,3 +9,6 @@ __pycache__/
 starter_kit/.venv/
 
 starter_kit/.env.l2.local
+
+.venv-spinq/
+.venv/

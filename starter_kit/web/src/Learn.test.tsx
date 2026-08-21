@@ -83,4 +83,13 @@ describe('Task 13J compact three-step Learn experience', () => {
     expect(markup).toContain('<details class="learn-technical">')
     expect(markup).not.toContain('<details class="learn-technical" open="">')
   })
+
+  it('keeps real hardware as an optional Learn-completion entry', () => {
+    const markup = renderToStaticMarkup(<LearnScreen onStart={() => undefined} onNavigate={() => undefined} />)
+    const text = plainText(markup)
+
+    expect(text).toContain('🚀 体验真实量子计算')
+    expect(text).toContain('选择一个量子实验')
+    expect(markup).not.toContain('REAL HARDWARE · OPTIONAL EXPERIENCE')
+  })
 })
