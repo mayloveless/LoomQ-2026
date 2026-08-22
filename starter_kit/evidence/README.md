@@ -167,15 +167,10 @@ docker run --rm \
 
 ## 新手引导与视觉叙事 Bonus
 
-请填写已有材料的路径，不要求为评分另写一套文档：
-
-```text
-零基础首次运行指南：[填写]
-量子概念解释：[填写]
-结果可视化：[填写]
-错误恢复或无障碍引导：[填写]
-```
-以上四项各 1 分。普通项目 README 完整不代表自动获得 Bonus。
+- 零基础首次运行指南：[Learn 三步导览](files/l2-agent/learn.gif)；对应实现：[web/src/Learn.tsx](../web/src/Learn.tsx)
+- 量子概念解释：[Learn 教学](files/l2-agent/learn.gif)；实验阶段中的叠加、纠缠、测量、相位与干涉解释见：[web/src/ExperimentStory.tsx](../web/src/ExperimentStory.tsx)
+- 结果可视化：[Explorer 生成与电路过程](files/l2-agent/explorer-generation.gif)；实验状态、概率与相对相位可视化见：[web/src/ExperimentStory.tsx](../web/src/ExperimentStory.tsx)
+- 错误恢复或无障碍引导：[真实量子设备不可用时的重试与模拟实验引导](files/l2-agent/real-hardware-not-configured.png)；对应 Learn 弹窗实现：[web/src/Learn.tsx](../web/src/Learn.tsx)
 
 ## 提交规则
 
