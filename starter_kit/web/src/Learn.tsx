@@ -339,6 +339,7 @@ function RealHardwareModal({ open, onClose }: RealHardwareModalProps) {
         {job?.status === "completed" && (
           <div className="real-hardware-result" aria-live="polite">
             <strong>这是来自真实量子设备的运行结果</strong>
+            <small className="real-hardware-note">有限次测量与真机噪声会带来波动，不一定恰为 50%。</small>
             <p>Job ID: <code>{job.job_id}</code> · 平台 SpinQ · 执行完成</p>
             {entries.length ? (
               <div className="real-hardware-probabilities" aria-label="真实设备测量结果">

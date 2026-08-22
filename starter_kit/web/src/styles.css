@@ -867,13 +867,14 @@ code, kbd { font-family: var(--mono); }
 .real-hardware-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(7,10,14,.78); }
 .real-hardware-modal { position: relative; width: min(100%, 620px); max-height: min(720px, calc(100vh - 44px)); overflow: auto; padding: 32px; border: 1px solid #3e5960; border-radius: 7px; background: #171d23; box-shadow: 0 28px 80px rgba(0,0,0,.5); }
 .real-hardware-modal > span { color: #65aab3; font: 12px var(--mono); letter-spacing: .12em; }
-.real-hardware-modal h2 { max-width: 510px; margin: 12px 0 23px; color: #edf4f6; font-size: 27px; line-height: 1.28; letter-spacing: -.025em; }
+.real-hardware-modal h2 { max-width: 510px; margin: 12px 0 23px; color: #edf4f6; font-size: 24px; line-height: 1.28; letter-spacing: -.025em; }
 .real-hardware-close { position: absolute; top: 14px; right: 16px; width: 30px; height: 30px; color: #9eabb5; border: 1px solid transparent; border-radius: 4px; background: transparent; font-size: 23px; line-height: 1; cursor: pointer; }
 .real-hardware-close:hover { color: #eef6f7; border-color: #3e4c58; }
 .real-hardware-loading { padding: 24px 0; color: var(--muted); }
 .real-hardware-message, .real-hardware-ready, .real-hardware-waiting, .real-hardware-result { padding: 19px; border: 1px solid #344550; border-radius: 5px; background: #141a20; }
 .real-hardware-message.is-error { border-color: #704a4e; }
 .real-hardware-message strong, .real-hardware-waiting strong, .real-hardware-result > strong { color: #dce8eb; font-size: 15px; }
+.real-hardware-note { display: block; margin-top: 6px; color: #7f8e99; font-size: 12px; line-height: 1.5; }
 .real-hardware-message p, .real-hardware-ready > p, .real-hardware-waiting p, .real-hardware-result > p { margin: 9px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
 .real-hardware-message button, .real-hardware-waiting button { margin-top: 14px; padding: 7px 10px; color: #9bd3d9; border: 1px solid #3d6e75; border-radius: 4px; background: transparent; cursor: pointer; }
 .real-hardware-ready dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
