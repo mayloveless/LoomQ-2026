@@ -9,7 +9,7 @@
 把要申报项目的方框改成 `[x]`，并填写对应内容：
 
 - [x] L1 真机
-- [ ] L2 交互体验
+- [x] L2 交互体验
 - [ ] 工程与产品化
 - [ ] 自定义量子 RISC-V Bonus
 - [ ] 新手引导与视觉叙事 Bonus
@@ -18,47 +18,62 @@
 
 每个有效真机平台计 5 分，最多两个平台。模拟器不计真机分。每个平台复制并填写一次下面的信息：
 
-```text
-平台名称：Origin Quantum Cloud（后端：WK_C180）
-平台 job ID：C631C56659A127243AFDB9D2B1086683
-运行时间：2026-08-21T13:52:28.326096Z（UTC）
-shots：1000
-实际执行的 QASM：evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-input.qasm
-平台返回的原始结果：evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-raw-result.json
-任务页截图：evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.png
-实际提交的 OriginIR：`evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.originir`；
-提交记录：`evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submission.json`；
-metadata：`evidence/files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-metadata.json`。
-```
+- 平台名称：Origin Quantum Cloud（后端：WK_C180）
+- 平台 job ID：C631C56659A127243AFDB9D2B1086683
+- 运行时间：2026-08-21T13:52:28.326096Z（UTC）
+- shots：1000
+- 实际执行的 QASM：[输入 QASM](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-input.qasm)
+- 平台返回的原始结果：[raw result](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-raw-result.json)
+- 任务页截图：[submitted.png](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.png)
+- 实际提交的 OriginIR：[submitted.originir](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.originir)
+- 提交记录：[submission.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submission.json)
+- metadata：[metadata.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-metadata.json)
 
-```text
-平台名称：SpinQ Cloud（后端：gemini_vp；平台返回 simu: false，pstatus: ACTIVE）
-平台 job ID：G-260821-0005
-运行时间：2026-08-21T14:46:21.039462Z（UTC）
-shots：1000
-实际执行的 QASM：evidence/files/l1-real-hardware/spinq/G-260821-0005-submitted.qasm
-平台返回的原始结果：evidence/files/l1-real-hardware/spinq/G-260821-0005-raw-result.json
-任务页截图：无
-原始输入 QASM：`evidence/files/l1-real-hardware/spinq/G-260821-0005-input.qasm`；
-解析后的结果：`evidence/files/l1-real-hardware/spinq/G-260821-0005-parsed-result.json`；
-metadata：`evidence/files/l1-real-hardware/spinq/G-260821-0005-metadata.json`。
-```
+- 平台名称：SpinQ Cloud（后端：gemini_vp；平台返回 simu: false，pstatus: ACTIVE）
+- 平台 job ID：G-260821-0005
+- 运行时间：2026-08-21T14:46:21.039462Z（UTC）
+- shots：1000
+- 实际执行的 QASM：[submitted.qasm](files/l1-real-hardware/spinq/G-260821-0005-submitted.qasm)
+- 平台返回的原始结果：[raw result](files/l1-real-hardware/spinq/G-260821-0005-raw-result.json)
+- 任务页截图：无
+- 原始输入 QASM：[input.qasm](files/l1-real-hardware/spinq/G-260821-0005-input.qasm)
+- 解析后的结果：[parsed result](files/l1-real-hardware/spinq/G-260821-0005-parsed-result.json)
+- metadata：[metadata.json](files/l1-real-hardware/spinq/G-260821-0005-metadata.json)
 
 ## L2 交互体验
 
 请填写：
 
 ```text
-启动界面或 CLI 的命令：[填写]
-测试入口或页面地址：[填写，没有则写“无”]
+启动界面或 CLI 的命令：
+docker build -t loomq-final .
+
+由评测运行环境注入：
+LOOMQ_LLM_BASE_URL
+LOOMQ_LLM_API_KEY
+LOOMQ_LLM_MODEL
+
+启动 Web：
+docker run --rm -p 8000:8765 \
+  -e LOOMQ_LLM_BASE_URL \
+  -e LOOMQ_LLM_API_KEY \
+  -e LOOMQ_LLM_MODEL \
+  loomq-final \
+  python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
+测试入口或页面地址：http://localhost:8000
 用于交互体验评测的 3 个用户任务：
-1. [填写]
-2. [填写]
-3. [填写]
-截图或演示视频：[选填，填写仓库内路径或稳定只读链接]
+1. 在 Explorer 输入“创建一个 Bell 态量子电路并测量”，查看自然语言生成的 OpenQASM、电路过程与语义验证结果。
+2. 在“程序修复”页粘贴包含错误的 OpenQASM，并说明目标；查看 parser/语义验证诊断与可确认的修复提案。
+3. 在 Learn 页面按步骤阅读 Bell 电路说明、查看状态变化与 QASM，再进入可选的真实量子设备体验入口。
+截图或演示视频：见下方链接。
 ```
 
-工作人员会在组委会统一模型环境中运行最终代码，测试新手是否看得懂、出错后能否得到有效帮助、结果是否清楚，以及多轮回答是否一致。选手自己的对话截图只用于说明产品流程，不直接证明得分。
+- [首页入口](files/l2-agent/home.png)
+- [Learn 教学、QASM 与状态变化](files/l2-agent/learn.gif)
+- [自然语言生成、QASM 与电路过程](files/l2-agent/explorer-generation.gif)
+- [验证或修复结果](files/l2-agent/repair-verification.gif)
+- [SpinQ 任务与结果](files/l2-agent/real-hardware.gif)
+
 
 ## 工程与产品化
 
