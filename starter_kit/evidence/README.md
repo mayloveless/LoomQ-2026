@@ -43,9 +43,11 @@
 
 ```text
 启动界面或 CLI 的命令：
+
+先构建镜像：
 docker build -t loomq-final .
 
-由评测运行环境注入：
+以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
 LOOMQ_LLM_BASE_URL
 LOOMQ_LLM_API_KEY
 LOOMQ_LLM_MODEL
@@ -53,7 +55,7 @@ SPINQ_USERNAME (用于跑真机, spinq用户名)
 SPINQ_KEY_PATH（用于跑真机, spinq关联的宿主机私钥绝对路径）
 
 启动 Web：
-docker run --rm \
+docker run --rm -p 8000:8765 \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
@@ -82,7 +84,10 @@ docker run --rm \
 ```text
 干净环境中的构建和启动命令：
 
-由评测运行环境注入：
+构建镜像：
+docker build -t loomq-final .
+
+以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
 LOOMQ_LLM_BASE_URL
 LOOMQ_LLM_API_KEY
 LOOMQ_LLM_MODEL
@@ -101,12 +106,13 @@ docker run --rm -p 8000:8765 \
   python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
 
 自动化自检：
-docker run --rm -p 8000:8765 \
+docker run --rm \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
   -e SPINQ_USERNAME \
   -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
+  -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
   -v "$PWD/runtime/reports:/reports" \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
