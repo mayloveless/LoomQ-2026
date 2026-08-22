@@ -173,7 +173,7 @@ docker run --rm \
 1. 在 Learn 页面阅读量子电路、QASM 与状态变化说明。[Learn 页](files/l2-agent/learn.gif)
 2. 在 Explorer 使用自然语言生成量子程序，并查看生成与验证过程。[Explorer 页](files/l2-agent/explorer-generation.gif)
 3. 在程序修复页诊断并修复已有 OpenQASM。[验证或修复结果页](files/l2-agent/repair-verification.gif)
-4. 根据条件选择执行真机运行平台。[执行平台选择页](files/l2-agent/choose-backend.gif)
+4. 根据条件查看后端推荐与约束匹配结果。[执行平台选择页](files/l2-agent/choose-backend.gif)
 
 ## 自定义量子 RISC-V Bonus
 
