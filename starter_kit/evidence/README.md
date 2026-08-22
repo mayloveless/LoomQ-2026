@@ -51,10 +51,11 @@
 
 ### 构建镜像
 
-以下命令均从 fork 根目录运行：
+先进入官方构建与评测根目录；如果当前环境已将 `starter_kit/` 提取为根目录，则无需重复执行 `cd`。后续命令均以 `starter_kit/` 为当前目录：
 
 ```bash
-docker build -t loomq-final starter_kit
+cd starter_kit
+docker build -t loomq-final .
 ```
 
 ### 运行环境变量
@@ -114,10 +115,11 @@ docker run --rm -p 8000:8765 \
 
 ### 构建镜像
 
-以下命令均从 fork 根目录运行：
+先进入官方构建与评测根目录；如果当前环境已将 `starter_kit/` 提取为根目录，则无需重复执行 `cd`。后续命令均以 `starter_kit/` 为当前目录：
 
 ```bash
-docker build -t loomq-final starter_kit
+cd starter_kit
+docker build -t loomq-final .
 ```
 
 ### 运行环境变量
@@ -147,14 +149,14 @@ docker run --rm -p 8000:8765 \
 ### 自动化自检
 
 ```bash
-mkdir -p starter_kit/runtime/reports
+mkdir -p runtime/reports
 
 docker run --rm \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
   -e LOOMQ_LLM_TIMEOUT_SECONDS=120 \
-  -v "$PWD/starter_kit/runtime/reports:/reports" \
+  -v "$PWD/runtime/reports:/reports" \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
 ```
