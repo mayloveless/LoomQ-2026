@@ -62,9 +62,10 @@ docker run --rm -p 8000:8765 \
   python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
 测试入口或页面地址：http://localhost:8000
 用于交互体验评测的 3 个用户任务：
-1. 在 Explorer 输入“创建一个 Bell 态量子电路并测量”，查看自然语言生成的 OpenQASM、电路过程与语义验证结果。
-2. 在“程序修复”页粘贴包含错误的 OpenQASM，并说明目标；查看 parser/语义验证诊断与可确认的修复提案。
-3. 在 Learn 页面按步骤阅读 Bell 电路说明、查看状态变化与 QASM，再进入可选的真实量子设备体验入口。
+1. 在 Learn 页面按步骤阅读 Bell 电路说明、查看状态变化与 QASM，再进入可选的真实量子设备体验入口。
+2. 在 Explorer 输入“创建一个 Bell 态量子电路并测量”，查看自然语言生成的 OpenQASM、电路过程与语义验证结果。
+3. 在“程序修复”页粘贴包含错误的 OpenQASM，并说明目标；查看 parser/语义验证诊断与可确认的修复提案。
+
 截图或演示视频：见下方链接。
 ```
 
@@ -72,7 +73,7 @@ docker run --rm -p 8000:8765 \
 - [Learn 教学、QASM 与状态变化](files/l2-agent/learn.gif)
 - [自然语言生成、QASM 与电路过程](files/l2-agent/explorer-generation.gif)
 - [验证或修复结果](files/l2-agent/repair-verification.gif)
-- [SpinQ 任务与结果](files/l2-agent/real-hardware.gif)
+- [执行平台选择](files/l2-agent/choose-backend.gif)
 
 
 ## 工程与产品化
