@@ -16,94 +16,23 @@
 
 ## L1 真机
 
-每个有效真机平台计 5 分，最多两个平台。模拟器不计真机分。每个平台复制并填写一次下面的信息：
-
-- 平台名称：Origin Quantum Cloud（后端：WK_C180）
-- 平台 job ID：C631C56659A127243AFDB9D2B1086683
-- 运行时间：2026-08-21T13:52:28.326096Z（UTC）
-- shots：1000
-- 实际执行的 QASM：[输入 QASM](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-input.qasm)
-- 平台返回的原始结果：[raw result](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-raw-result.json)
-- 任务页截图：[submitted.png](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.png)
-- 实际提交的 OriginIR：[submitted.originir](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submitted.originir)
-- 提交记录：[submission.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submission.json)
-- metadata：[metadata.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-metadata.json)
-
-- 平台名称：SpinQ Cloud（后端：gemini_vp；平台返回 simu: false，pstatus: ACTIVE）
-- 平台 job ID：G-260821-0005
-- 运行时间：2026-08-21T14:46:21.039462Z（UTC）
-- shots：1000
-- 实际执行的 QASM：[submitted.qasm](files/l1-real-hardware/spinq/G-260821-0005-submitted.qasm)
-- 平台返回的原始结果：[raw result](files/l1-real-hardware/spinq/G-260821-0005-raw-result.json)
-- 任务页截图：无
-- 原始输入 QASM：[input.qasm](files/l1-real-hardware/spinq/G-260821-0005-input.qasm)
-- 解析后的结果：[parsed result](files/l1-real-hardware/spinq/G-260821-0005-parsed-result.json)
-- metadata：[metadata.json](files/l1-real-hardware/spinq/G-260821-0005-metadata.json)
+（保持已有内容）
 
 ## L2 交互体验
 
-```text
-启动界面或 CLI 的命令：
-docker build -t loomq-final .
-
-由评测运行环境注入：
-LOOMQ_LLM_BASE_URL
-LOOMQ_LLM_API_KEY
-LOOMQ_LLM_MODEL
-SPINQ_USERNAME
-SPINQ_KEY_PATH（宿主机私钥绝对路径）
-
-启动 Web：
-```
-```bash
-docker run --rm -p 8000:8765 \
-  -e LOOMQ_LLM_BASE_URL \
-  -e LOOMQ_LLM_API_KEY \
-  -e LOOMQ_LLM_MODEL \
-  -e SPINQ_USERNAME \
-  -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
-  -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
-  loomq-final \
-  python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
-```
-```text
-测试入口或页面地址：http://localhost:8000
-用于交互体验评测的 3 个用户任务：
-1. 在 Learn 页面按步骤阅读 Bell 电路说明、查看状态变化与 QASM，再进入可选的真实量子设备体验入口。
-2. 在 Explorer 输入“创建一个 Bell 态量子电路并测量”，查看自然语言生成的 OpenQASM、电路过程与语义验证结果。
-3. 在“程序修复”页粘贴包含错误的 OpenQASM，并说明目标；查看 parser/语义验证诊断与可确认的修复提案。
-
-截图或演示视频：见下方链接。
-```
-
-- [首页入口](files/l2-agent/home.png)
-- [Learn 教学、QASM 与状态变化](files/l2-agent/learn.gif)
-- [自然语言生成、QASM 与电路过程](files/l2-agent/explorer-generation.gif)
-- [验证或修复结果](files/l2-agent/repair-verification.gif)
-- [执行平台选择](files/l2-agent/choose-backend.gif)
-
+（保持已有内容）
 
 ## 工程与产品化
 
 ```text
 干净环境中的构建和启动命令：
+
 docker build -t loomq-final .
 
-由评测运行环境注入 LOOMQ_LLM_BASE_URL、LOOMQ_LLM_API_KEY、LOOMQ_LLM_MODEL、SPINQ_USERNAME 与 SPINQ_KEY_PATH（宿主机私钥绝对路径）后启动 Web：
-```
-```bash
-docker run --rm -p 8000:8765 \
-  -e LOOMQ_LLM_BASE_URL \
-  -e LOOMQ_LLM_API_KEY \
-  -e LOOMQ_LLM_MODEL \
-  -e SPINQ_USERNAME \
-  -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
-  -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
-  loomq-final \
-  python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
-```
+由评测运行环境注入 LOOMQ_LLM_BASE_URL、LOOMQ_LLM_API_KEY、LOOMQ_LLM_MODEL、SPINQ_USERNAME 与 SPINQ_KEY_PATH 后启动 Web。
+
 自动化自检：
-```bash
+
 docker run --rm \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
@@ -111,20 +40,17 @@ docker run --rm \
   -v "$PWD/runtime/reports:/reports" \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
-```
-```text
+
 架构说明：
-OpenQASM 2.0 经 Parser 解析为平台无关 Circuit IR，再由 Serializer/Backend Adapter 生成目标平台程序；
-Runner 统一执行结果。Web 使用独立 HTTP API 调用 Agent、修复与 SpinQ 真机体验；
-SpinQ Cloud SDK 使用独立 Python 环境，避免与 Braket 语义验证依赖冲突。
+evidence/architecture.md
 
 目标用户和使用场景：面向量子计算初学者和开发者，通过自然语言交互、可视化学习流程与真实设备体验，降低量子程序编写、理解和执行的门槛。
 
 完整使用流程：
 1. 在 Learn 页面阅读量子电路、QASM 与状态变化说明。
-2. 在 Explorer 用自然语言生成量子程序，并查看生成与验证过程。
+2. 在 Explorer 使用自然语言生成量子程序，并查看生成与验证过程。
 3. 在程序修复页诊断并修复已有 OpenQASM。
-4. 从 Learn 的可选入口提交固定 Bell 实验至 SpinQ 真机并查看 job ID 与结果。
+4. 从 Learn 的可选入口提交实验并查看执行结果。
 5. Origin Quantum Cloud 与 SpinQ Cloud 的真实设备任务记录见 L1 真机证据。
 
 产品截图：见下方链接。
