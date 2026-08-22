@@ -11,8 +11,8 @@
 - [x] L1 真机
 - [x] L2 交互体验
 - [x] 工程与产品化
-- [ ] 自定义量子 RISC-V Bonus
-- [ ] 新手引导与视觉叙事 Bonus
+- [x] 自定义量子 RISC-V Bonus
+- [x] 新手引导与视觉叙事 Bonus
 
 ## L1 真机
 
@@ -41,20 +41,27 @@
 
 ## L2 交互体验
 
-```text
 启动界面或 CLI 的命令：
 
-先构建镜像：
+### 构建镜像
+
+```bash
 docker build -t loomq-final .
+```
+
+### 运行环境变量
 
 以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
-LOOMQ_LLM_BASE_URL
-LOOMQ_LLM_API_KEY
-LOOMQ_LLM_MODEL
-SPINQ_USERNAME (用于跑真机, spinq用户名)
-SPINQ_KEY_PATH（用于跑真机, spinq关联的宿主机私钥绝对路径）
 
-启动 Web：
+- `LOOMQ_LLM_BASE_URL`
+- `LOOMQ_LLM_API_KEY`
+- `LOOMQ_LLM_MODEL`
+- `SPINQ_USERNAME`（用于跑真机，SpinQ 用户名）
+- `SPINQ_KEY_PATH`（用于跑真机，SpinQ 关联的宿主机私钥绝对路径）
+
+### 启动 Web
+
+```bash
 docker run --rm -p 8000:8765 \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
@@ -64,14 +71,15 @@ docker run --rm -p 8000:8765 \
   -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
   loomq-final \
   python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
+```
 
-测试入口：http://localhost:8000
+测试入口：[http://localhost:8000](http://localhost:8000)
 
-用户任务：
+### 用户任务
+
 1. 在 Learn 页面按步骤阅读 Bell 电路说明、查看状态变化与 QASM，再进入可选的真实量子设备体验入口。
 2. 在 Explorer 输入“创建一个 Bell 态量子电路并测量”，查看自然语言生成的 OpenQASM、电路过程与语义验证结果。
 3. 在“程序修复”页粘贴包含错误的 OpenQASM，并说明目标；查看 parser/语义验证诊断与可确认的修复提案。
-```
 
 - [首页入口](files/l2-agent/home.png)
 - [Learn 教学、QASM 与状态变化](files/l2-agent/learn.gif)
@@ -81,20 +89,27 @@ docker run --rm -p 8000:8765 \
 
 ## 工程与产品化
 
-```text
 干净环境中的构建和启动命令：
 
-构建镜像：
+### 构建镜像
+
+```bash
 docker build -t loomq-final .
+```
+
+### 运行环境变量
 
 以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
-LOOMQ_LLM_BASE_URL
-LOOMQ_LLM_API_KEY
-LOOMQ_LLM_MODEL
-SPINQ_USERNAME (用于跑真机, spinq用户名)
-SPINQ_KEY_PATH（用于跑真机, spinq关联的宿主机私钥绝对路径）
 
-启动 Web：
+- `LOOMQ_LLM_BASE_URL`
+- `LOOMQ_LLM_API_KEY`
+- `LOOMQ_LLM_MODEL`
+- `SPINQ_USERNAME`（用于跑真机，SpinQ 用户名）
+- `SPINQ_KEY_PATH`（用于跑真机，SpinQ 关联的宿主机私钥绝对路径）
+
+### 启动 Web
+
+```bash
 docker run --rm -p 8000:8765 \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
@@ -104,8 +119,11 @@ docker run --rm -p 8000:8765 \
   -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
   loomq-final \
   python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
+```
 
-自动化自检：
+### 自动化自检
+
+```bash
 docker run --rm \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
@@ -116,37 +134,36 @@ docker run --rm \
   -v "$PWD/runtime/reports:/reports" \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
+```
 
 架构说明：[architecture.md](files/docs/architecture.md)
 
-目标用户和使用场景：
+### 目标用户和使用场景
+
 面向具备编程基础、希望快速了解和体验量子计算的开发者。
 用户无需从底层量子编程语法开始学习，通过自然语言交互、可视化代码解释、程序验证与真实量子设备体验，完成从量子程序理解、生成到执行的完整流程。
 
-完整使用流程：
+### 完整使用流程
+
 1. 在 Learn 页面阅读量子电路、QASM 与状态变化说明。[Learn 页](files/l2-agent/learn.gif)
 2. 在 Explorer 使用自然语言生成量子程序，并查看生成与验证过程。[Explorer 页](files/l2-agent/explorer-generation.gif)
 3. 在程序修复页诊断并修复已有 OpenQASM。[验证或修复结果页](files/l2-agent/repair-verification.gif)
 4. 根据条件选择执行真机运行平台。[执行平台选择页](files/l2-agent/choose-backend.gif)
 
-```
-
 ## 自定义量子 RISC-V Bonus
 
 以下三项必须齐全且测试通过，才获得 8 分：
 
-指令编码规格：[quantum-riscv.md](files/docs/quantum-riscv.md)
+- 指令编码规格：[quantum-riscv.md](files/docs/quantum-riscv.md)
+- 模拟器扩展实现：[bonus/quantum_riscv/emulator.py](../bonus/quantum_riscv/emulator.py)
+- 端到端测试命令：
 
-模拟器扩展实现：[bonus/quantum_riscv/emulator.py](../bonus/quantum_riscv/emulator.py)
+  ```bash
+  docker run --rm loomq-final \
+    python -m unittest tests.test_quantum_riscv_bonus -v
+  ```
 
-端到端测试命令：
-
-```bash
-docker run --rm loomq-final \
-  python -m unittest tests.test_quantum_riscv_bonus -v
-```
-
-测试入口：[tests/test_quantum_riscv_bonus.py](../tests/test_quantum_riscv_bonus.py)
+- 测试入口：[tests/test_quantum_riscv_bonus.py](../tests/test_quantum_riscv_bonus.py)
 
 ## 新手引导与视觉叙事 Bonus
 
