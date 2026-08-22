@@ -18,6 +18,8 @@
 
 每个平台填写一次。
 
+### Origin Quantum Cloud
+
 - 平台名称：Origin Quantum Cloud（后端：WK_C180）
 - 平台 job ID：C631C56659A127243AFDB9D2B1086683
 - 运行时间：2026-08-21T13:52:28.326096Z（UTC）
@@ -29,6 +31,8 @@
 - 提交记录：[submission.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-submission.json)
 - metadata：[metadata.json](files/l1-real-hardware/originq/C631C56659A127243AFDB9D2B1086683-metadata.json)
 
+### SpinQ Cloud
+
 - 平台名称：SpinQ Cloud（后端：gemini_vp）
 - 平台 job ID：G-260821-0005
 - 运行时间：2026-08-21T14:46:21.039462Z（UTC）
@@ -39,25 +43,29 @@
 - 解析后的结果：[parsed result](files/l1-real-hardware/spinq/G-260821-0005-parsed-result.json)
 - metadata：[metadata.json](files/l1-real-hardware/spinq/G-260821-0005-metadata.json)
 
+说明：SpinQ Cloud 的 QASM 提交接口不接受 `measure` 语句，因此 `submitted.qasm` 是实际发送给平台的无测量副本；`input.qasm` 保留原始完整测量语义，平台原始结果以概率数组返回。
+
 ## L2 交互体验
 
 启动界面或 CLI 的命令：
 
 ### 构建镜像
 
+以下命令均从 fork 根目录运行：
+
 ```bash
-docker build -t loomq-final .
+docker build -t loomq-final starter_kit
 ```
 
 ### 运行环境变量
 
-以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
+以下三个变量必须在运行环境中设置，也可使用 Docker 的 `--env-file` 提供：
 
 - `LOOMQ_LLM_BASE_URL`
 - `LOOMQ_LLM_API_KEY`
 - `LOOMQ_LLM_MODEL`
-- `SPINQ_USERNAME`（用于跑真机，SpinQ 用户名）
-- `SPINQ_KEY_PATH`（用于跑真机，SpinQ 关联的宿主机私钥绝对路径）
+
+可选设置 `LOOMQ_LLM_TIMEOUT_SECONDS=120`。SpinQ 真机体验所需的 `SPINQ_USERNAME` 和 `SPINQ_KEY_PATH` 不影响基础 Web 启动，配置方法见下方可选命令。
 
 ### 启动 Web
 
@@ -66,6 +74,19 @@ docker run --rm -p 8000:8765 \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
+  -e LOOMQ_LLM_TIMEOUT_SECONDS=120 \
+  loomq-final \
+  python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
+```
+
+如需在 Web 中体验 SpinQ 真机，先将宿主机环境变量 `SPINQ_KEY_PATH` 设置为关联私钥的绝对路径，再运行：
+
+```bash
+docker run --rm -p 8000:8765 \
+  -e LOOMQ_LLM_BASE_URL \
+  -e LOOMQ_LLM_API_KEY \
+  -e LOOMQ_LLM_MODEL \
+  -e LOOMQ_LLM_TIMEOUT_SECONDS=120 \
   -e SPINQ_USERNAME \
   -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
   -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
@@ -93,19 +114,21 @@ docker run --rm -p 8000:8765 \
 
 ### 构建镜像
 
+以下命令均从 fork 根目录运行：
+
 ```bash
-docker build -t loomq-final .
+docker build -t loomq-final starter_kit
 ```
 
 ### 运行环境变量
 
-以下命令示例假定这些变量已在运行环境中设置；也可使用 Docker 的 `--env-file` 提供：
+以下三个变量必须在运行环境中设置，也可使用 Docker 的 `--env-file` 提供：
 
 - `LOOMQ_LLM_BASE_URL`
 - `LOOMQ_LLM_API_KEY`
 - `LOOMQ_LLM_MODEL`
-- `SPINQ_USERNAME`（用于跑真机，SpinQ 用户名）
-- `SPINQ_KEY_PATH`（用于跑真机，SpinQ 关联的宿主机私钥绝对路径）
+
+可选设置 `LOOMQ_LLM_TIMEOUT_SECONDS=120`。SpinQ 真机体验所需的 `SPINQ_USERNAME` 和 `SPINQ_KEY_PATH` 不影响基础 Web 启动。
 
 ### 启动 Web
 
@@ -114,24 +137,24 @@ docker run --rm -p 8000:8765 \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
-  -e SPINQ_USERNAME \
-  -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
-  -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
+  -e LOOMQ_LLM_TIMEOUT_SECONDS=120 \
   loomq-final \
   python -m loomq.debug_web --host 0.0.0.0 --port 8765 --serve-web
 ```
 
+需要体验 SpinQ 真机时，使用上方“L2 交互体验”中的可选真机启动命令。
+
 ### 自动化自检
 
 ```bash
+mkdir -p starter_kit/runtime/reports
+
 docker run --rm \
   -e LOOMQ_LLM_BASE_URL \
   -e LOOMQ_LLM_API_KEY \
   -e LOOMQ_LLM_MODEL \
-  -e SPINQ_USERNAME \
-  -e SPINQ_KEY_PATH=/run/secrets/spinq-private-key \
-  -v "$SPINQ_KEY_PATH:/run/secrets/spinq-private-key:ro" \
-  -v "$PWD/runtime/reports:/reports" \
+  -e LOOMQ_LLM_TIMEOUT_SECONDS=120 \
+  -v "$PWD/starter_kit/runtime/reports:/reports" \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
 ```

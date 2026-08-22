@@ -2,34 +2,38 @@
 
 ## 整体架构
 
-LoomQ 采用分层架构，主要包含 Web 交互层、L2 Agent 层、量子程序验证层、执行适配层以及运行环境层。
+LoomQ 采用分层架构，主要包含 Web 交互层、L2 Agent 层、平台无关的量子程序核心层、后端执行层以及运行环境层。`adapter.py` 只提供官方入口并完成目标路由，不包含平台 SDK 逻辑。
 
 整体流程：
 
 ```
-用户
- |
- v
-Web 交互层
- |
- v
-L2 Agent
- |
- +----------------+
- |                |
- v                v
-目标规格/验证      程序转换
- |
- v
-量子执行适配层
- |
- +----------------+
- |                |
- v                v
-Origin Quantum   SpinQ Cloud
- |
- v
-真实量子设备
+用户 / 官方 evaluator
+          |
+          v
+Web 交互层 / adapter.py
+          |
+          v
+OpenQASM 2.0 Parser + 语义校验
+          |
+          v
+平台无关 Circuit IR
+          |
+          +--------------------+--------------------+
+          |                    |                    |
+          v                    v                    v
+SpinQ Serializer       OriginQ Serializer     Braket Serializer
+OpenQASM 2.0              OriginIR             OpenQASM 3
+          |                    |                    |
+          v                    v                    v
+SpinQ Runner           OriginQ Runner          Braket Runner
+          |                    |                    |
+          v                    v                    v
+  SpinQit Taurus       OriginQ CPUQVM       Braket LocalSimulator
+          |                    |                    |
+          +--------------------+--------------------+
+                               |
+                               v
+         统一结果 Schema（counts 位序固定为 little）
 ```
 
 ---
@@ -83,31 +87,32 @@ Repair (optional)
 
 ---
 
-## 3. 量子程序验证层
+## 3. 平台无关量子程序核心层
 
-负责保证 AI 生成程序满足目标要求。
+Parser 只负责 OpenQASM 2.0 语法解析与语义校验，并生成不包含具体平台字段的 `Circuit` IR。L1 转译、模拟器执行、真机执行和 L2 本地验证复用同一套 Parser 与 IR，不为不同平台重复解析 OpenQASM。
 
 包括：
 
-- OpenQASM parser；
-- 电路结构检查；
-- statevector 验证；
-- fidelity 检查；
-- repair candidate 验证。
+- `loomq/parser.py`：OpenQASM Parser 与语义校验；
+- `loomq/ir.py`：平台无关 `Circuit` IR；
+- `loomq/serializers/`：将 IR 序列化为 SpinQ OpenQASM 2.0、OriginIR 或 Braket OpenQASM 3；
+- `loomq/semantic_verifier.py`：L2 statevector、fidelity 与 repair candidate 验证。
 
 ---
 
-## 4. 执行适配层
+## 4. 后端执行与结果归一化层
 
-提供统一执行接口。
+`loomq/runners/` 中的 Runner 负责调用后端 SDK，并将不同平台的原始结果统一为官方结果 Schema。`adapter.py` 根据 `target` 路由到对应 Serializer 或 Runner，不在入口层实现平台细节。
 
 支持：
 
-- 本地模拟执行；
-- Origin Quantum Cloud；
-- SpinQ Cloud。
+- SpinQit Taurus 本地模拟器；
+- OriginQ CPUQVM 本地模拟器；
+- AWS Braket LocalSimulator。
 
-不同平台通过独立 adapter 实现平台差异隔离。
+三个 Runner 均返回 `backend`、`job_id`、`shots`、`counts`、`bit_order` 和 `timestamp`；其中 `counts` 在中间层内归一化，`bit_order` 固定为 `little`。
+
+Origin Quantum Cloud 与 SpinQ Cloud 真机接入由独立提交脚本和 Web 真机服务负责，复用 L1 的 Parser 与 Serializer 生成实际提交电路；真机原始结果和可追溯元数据保存到 `evidence/files/`，不把凭据写入镜像或证据文件。
 
 ---
 
