@@ -117,7 +117,7 @@ docker run --rm \
   loomq-final \
   python evaluator.py --level all --target spinq,originq,braket --json-out /reports/all.json
 
-架构说明：[architecture.md](files/architecture.md)
+架构说明：[architecture.md](files/docs/architecture.md)
 
 目标用户和使用场景：
 面向具备编程基础、希望快速了解和体验量子计算的开发者。
@@ -135,11 +135,18 @@ docker run --rm \
 
 以下三项必须齐全且测试通过，才获得 8 分：
 
-```text
-指令编码规格：[填写文档路径]
-模拟器扩展实现：[填写代码路径]
-端到端测试命令：[填写命令或文档路径]
+指令编码规格：[quantum-riscv.md](files/docs/quantum-riscv.md)
+
+模拟器扩展实现：[bonus/quantum_riscv/emulator.py](../bonus/quantum_riscv/emulator.py)
+
+端到端测试命令：
+
+```bash
+docker run --rm loomq-final \
+  python -m unittest tests.test_quantum_riscv_bonus -v
 ```
+
+测试入口：[tests/test_quantum_riscv_bonus.py](../tests/test_quantum_riscv_bonus.py)
 
 ## 新手引导与视觉叙事 Bonus
 
